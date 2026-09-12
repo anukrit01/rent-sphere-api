@@ -12,7 +12,8 @@
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "clean": "rimraf dist",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "config:validate": "tsx src/config/validate.ts"
   },
   "keywords": [
     "rentsphere",
