@@ -1,6 +1,7 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import { pinoHttp } from 'pino-http';
 import { env } from './config/env.js';
 import { logger } from './utils/logger.js';
@@ -33,6 +34,9 @@ export const createApp = (): Express => {
       allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
     })
   );
+
+  // Cookie Parser
+  app.use(cookieParser());
 
   // Body Parsing
   app.use(express.json({ limit: '1mb' }));
