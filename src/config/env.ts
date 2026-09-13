@@ -38,7 +38,11 @@ export const envSchema = z
     CLOUDINARY_API_SECRET: z.string().min(1).default('000000000000000000000000000'),
 
     // Rate Limiting
-    RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(15 * 60 * 1000),
+    RATE_LIMIT_WINDOW_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(15 * 60 * 1000),
     RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
 
     // Logging
@@ -49,7 +53,8 @@ export const envSchema = z
     EMAIL_API_KEY: z.string().optional(),
   })
   .refine((data) => data.JWT_ACCESS_SECRET !== data.JWT_REFRESH_SECRET, {
-    message: 'JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be distinct keys to prevent token forgery',
+    message:
+      'JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be distinct keys to prevent token forgery',
     path: ['JWT_REFRESH_SECRET'],
   })
   .refine(
@@ -90,7 +95,9 @@ export const validateEnv = (rawEnv: NodeJS.ProcessEnv = process.env): EnvSchema 
     console.error('='.repeat(70));
     console.error(formatted);
     console.error('='.repeat(70));
-    console.error(' The application cannot start safely. Check your .env file or deployment config.\n');
+    console.error(
+      ' The application cannot start safely. Check your .env file or deployment config.\n'
+    );
     process.exit(1);
   }
 

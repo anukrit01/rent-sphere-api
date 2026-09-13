@@ -13,7 +13,14 @@
     "format:check": "prettier --check \"src/**/*.ts\"",
     "clean": "rimraf dist",
     "typecheck": "tsc --noEmit",
-    "config:validate": "tsx src/config/validate.ts"
+    "config:validate": "tsx src/config/validate.ts",
+    "db:generate": "prisma generate",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:status": "prisma migrate status",
+    "db:studio": "prisma studio",
+    "docker:db:up": "docker compose up -d",
+    "docker:db:down": "docker compose down"
   },
   "keywords": [
     "rentsphere",
@@ -30,6 +37,7 @@
   "license": "UNLICENSED",
   "private": true,
   "dependencies": {
+    "@prisma/client": "^6.19.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
@@ -46,6 +54,7 @@
     "eslint": "^9.20.1",
     "pino-pretty": "^13.0.0",
     "prettier": "^3.5.1",
+    "prisma": "^6.19.3",
     "rimraf": "^6.0.1",
     "tsx": "^4.19.3",
     "typescript": "^5.7.3",
