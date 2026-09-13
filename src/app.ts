@@ -1,13 +1,15 @@
-import express, { Express, Request, Response } from 'express';
+import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import { env } from './config/env.js';
 import { logger } from './utils/logger.js';
 import { requestIdMiddleware } from './middleware/request-id.middleware.js';
+import { errorHandlerMiddleware } from './middleware/error.middleware.js';
+import { NotFoundError } from './errors/app.error.js';
 import { apiRouter } from './routes/index.js';
 import { healthRoutes } from './routes/health.routes.js';
-import { API_BASE_PATH, ErrorCode } from './constants/index.js';
+import { API_BASE_PATH } from './constants/index.js';
 
 export const createApp = (): Express => {
   const app = express();
@@ -58,16 +60,13 @@ export const createApp = (): Express => {
   // Versioned API routes (/api/v1)
   app.use(API_BASE_PATH, apiRouter);
 
-  // 404 Handler
-  app.use((req: Request, res: Response) => {
-    res.status(404).json({
-      success: false,
-      error: {
-        code: ErrorCode.NOT_FOUND,
-        message: `Cannot ${req.method} ${req.path}`,
-      },
-    });
+  // 404 Handler - delegates to centralized error handling pipeline
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    next(new NotFoundError(`Cannot ${req.method} ${req.path}`));
   });
+
+  // Centralized Global Error Handler (must be registered last)
+  app.use(errorHandlerMiddleware);
 
   return app;
 };
