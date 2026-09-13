@@ -1,5 +1,6 @@
 // ==============================================================================
 // RentSphere Database Schema - PostgreSQL with Prisma ORM
+// Phase 4: Complete relational data model for the leasing marketplace
 // ==============================================================================
 
 generator client {
@@ -9,4 +10,298 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+// ==============================================================================
+// ENUMS
+// ==============================================================================
+
+enum UserRole {
+  ADMIN
+  LEASER
+  RENTER
+}
+
+enum AssetStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  CHANGES_REQUESTED
+  AVAILABLE
+  RENTED
+  MAINTENANCE
+  DEACTIVATED
+}
+
+enum AssetCondition {
+  EXCELLENT
+  GOOD
+  REBUILT
+  WORKING
+}
+
+enum FuelType {
+  DIESEL
+  ELECTRIC
+  HYBRID
+  PETROL
+}
+
+enum BookingStatus {
+  PENDING
+  APPROVED
+  ACTIVE
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
+// ==============================================================================
+// MODELS
+// ==============================================================================
+
+/// Platform user — all roles (ADMIN, LEASER, RENTER) share a single table.
+/// Role-based access control is enforced at the application layer.
+model User {
+  id          String   @id @default(uuid())
+  email       String   @unique
+  password    String
+  name        String
+  role        UserRole @default(RENTER)
+  phone       String?
+  companyName String?  @map("company_name")
+  avatar      String?
+  location    String?
+  verified    Boolean  @default(false)
+  rating      Float    @default(0)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  assets        Asset[]        @relation("OwnerAssets")
+  bookings      Booking[]      @relation("RenterBookings")
+  reviews       Review[]       @relation("ReviewAuthor")
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+/// Equipment category (Excavators, Cranes, Loaders, etc.)
+model Category {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  slug        String  @unique
+  icon        String
+  description String
+  image       String?
+  featured    Boolean @default(false)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  assets Asset[]
+
+  @@map("categories")
+}
+
+/// Equipment listing created by a LEASER.
+model Asset {
+  id          String         @id @default(uuid())
+  title       String
+  tagline     String?
+  description String
+  status      AssetStatus    @default(DRAFT)
+  condition   AssetCondition @default(GOOD)
+
+  // Pricing
+  pricePerDay     Float  @map("price_per_day")
+  pricePerWeek    Float? @map("price_per_week")
+  securityDeposit Float  @map("security_deposit")
+
+  // Location
+  location String
+  city     String
+  state    String
+  pinCode  String? @map("pin_code")
+
+  // Aggregated stats
+  rating      Float @default(0)
+  reviewCount Int   @default(0) @map("review_count")
+
+  // Flags
+  featured          Boolean @default(false)
+  popular           Boolean @default(false)
+  operatorProvided  Boolean @default(false) @map("operator_provided")
+  deliveryAvailable Boolean @default(false) @map("delivery_available")
+  deliveryFee       Float?  @map("delivery_fee")
+  minimumRentalDays Int     @default(1) @map("minimum_rental_days")
+
+  // Flexible structured data (PostgreSQL native arrays)
+  features    String[]
+  rentalTerms String[] @map("rental_terms")
+
+  // Admin audit
+  adminNotes  String? @map("admin_notes")
+  auditReason String? @map("audit_reason")
+
+  // Foreign keys
+  ownerId    String @map("owner_id")
+  categoryId String @map("category_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  owner         User                @relation("OwnerAssets", fields: [ownerId], references: [id], onDelete: Cascade)
+  category      Category            @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  images        AssetImage[]
+  specification AssetSpecification?
+  bookings      Booking[]
+  reviews       Review[]
+
+  // Indexes
+  @@index([categoryId, status], name: "idx_asset_category_status")
+  @@index([ownerId], name: "idx_asset_owner")
+  @@index([status], name: "idx_asset_status")
+  @@index([city], name: "idx_asset_city")
+  @@map("assets")
+}
+
+/// Cloudinary image URL for an asset, with display ordering.
+model AssetImage {
+  id        String @id @default(uuid())
+  url       String
+  publicId  String @map("public_id")
+  sortOrder Int    @default(0) @map("sort_order")
+
+  assetId String @map("asset_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId], name: "idx_image_asset")
+  @@map("asset_images")
+}
+
+/// Technical specifications for an asset — 1:1 relationship.
+model AssetSpecification {
+  id String @id @default(uuid())
+
+  brand           String
+  model           String
+  year            Int
+  operatingWeight String?   @map("operating_weight")
+  enginePower     String?   @map("engine_power")
+  fuelType        FuelType? @map("fuel_type")
+  operatingHours  Int?      @map("operating_hours")
+  capacity        String?
+  maxReach        String?   @map("max_reach")
+  boomLength      String?   @map("boom_length")
+
+  assetId String @unique @map("asset_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@map("asset_specifications")
+}
+
+/// Rental booking request from a RENTER for an Asset.
+model Booking {
+  id String @id @default(uuid())
+
+  // Dates
+  startDate DateTime @map("start_date")
+  endDate   DateTime @map("end_date")
+
+  // Pricing snapshot (captured at booking time)
+  durationDays    Int   @map("duration_days")
+  dailyRate       Float @map("daily_rate")
+  rentalSubtotal  Float @map("rental_subtotal")
+  operatorFee     Float @default(0) @map("operator_fee")
+  deliveryFee     Float @default(0) @map("delivery_fee")
+  securityDeposit Float @map("security_deposit")
+  estimatedTotal  Float @map("estimated_total")
+
+  // Booking details
+  operatorRequired   Boolean @default(false) @map("operator_required")
+  deliveryRequired   Boolean @default(false) @map("delivery_required")
+  projectLocation    String  @map("project_location")
+  projectDescription String? @map("project_description")
+
+  // Status
+  status          BookingStatus @default(PENDING)
+  rejectionReason String?       @map("rejection_reason")
+
+  // Foreign keys
+  renterId String @map("renter_id")
+  assetId  String @map("asset_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  renter User  @relation("RenterBookings", fields: [renterId], references: [id], onDelete: Cascade)
+  asset  Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  // Indexes
+  @@index([assetId, startDate, endDate], name: "idx_booking_availability")
+  @@index([renterId], name: "idx_booking_renter")
+  @@index([status], name: "idx_booking_status")
+  @@map("bookings")
+}
+
+/// Post-rental review by a RENTER on an Asset.
+model Review {
+  id      String @id @default(uuid())
+  rating  Int
+  comment String
+
+  authorName    String  @map("author_name")
+  authorCompany String? @map("author_company")
+  projectType   String? @map("project_type")
+
+  // Foreign keys
+  authorId String @map("author_id")
+  assetId  String @map("asset_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  author User  @relation("ReviewAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  asset  Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  // Constraints — one review per author per asset
+  @@unique([authorId, assetId], name: "uq_review_author_asset")
+  @@index([assetId], name: "idx_review_asset")
+  @@map("reviews")
+}
+
+/// JWT refresh token whitelist — supports secure token rotation.
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  userAgent String?  @map("user_agent")
+  ipAddress String?  @map("ip_address")
+
+  userId String @map("user_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], name: "idx_refresh_token_user")
+  @@index([expiresAt], name: "idx_refresh_token_expires")
+  @@map("refresh_tokens")
 }
