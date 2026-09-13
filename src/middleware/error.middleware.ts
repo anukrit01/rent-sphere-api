@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction, ErrorRequestHandler } from 'express';
 import { Prisma } from '@prisma/client';
+import { ZodError } from 'zod';
 import { AppError } from '../errors/app.error.js';
 import { ErrorCode } from '../constants/index.js';
 import { ApiResponseError, ApiErrorDetail } from '../types/index.js';
@@ -8,7 +9,7 @@ import { env } from '../config/env.js';
 
 /**
  * Centralized Global Error Handling Middleware.
- * Catches all errors from async handlers, routes, Prisma, and body parser,
+ * Catches all errors from async handlers, routes, Prisma, Zod, and body parser,
  * logs detailed diagnostics internally, and formats safe, standardized error envelopes.
  */
 export const errorHandlerMiddleware: ErrorRequestHandler = (
@@ -56,7 +57,26 @@ export const errorHandlerMiddleware: ErrorRequestHandler = (
     return;
   }
 
-  // 2. Prisma Known Request Errors
+  // 2. Direct Zod Validation Errors
+  if (err instanceof ZodError) {
+    const details: ApiErrorDetail[] = err.issues.map((issue) => ({
+      field: issue.path.length > 0 ? issue.path.join('.') : undefined,
+      message: issue.message,
+      code: issue.code,
+    }));
+
+    res.status(400).json({
+      success: false,
+      error: {
+        code: ErrorCode.VALIDATION_ERROR,
+        message: 'Validation failed',
+        details,
+      },
+    });
+    return;
+  }
+
+  // 3. Prisma Known Request Errors
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     let statusCode = 400;
     let code = ErrorCode.VALIDATION_ERROR;
@@ -102,7 +122,7 @@ export const errorHandlerMiddleware: ErrorRequestHandler = (
     return;
   }
 
-  // 3. Prisma Validation Errors
+  // 4. Prisma Validation Errors
   if (err instanceof Prisma.PrismaClientValidationError) {
     logger.warn({ requestId, err }, 'Prisma client validation error');
     res.status(400).json({
@@ -116,7 +136,7 @@ export const errorHandlerMiddleware: ErrorRequestHandler = (
     return;
   }
 
-  // 4. JSON Body Parser SyntaxError (Malformed JSON payload)
+  // 5. JSON Body Parser SyntaxError (Malformed JSON payload)
   if (err instanceof SyntaxError && 'status' in err && (err as { status: number }).status === 400 && 'body' in err) {
     res.status(400).json({
       success: false,
@@ -129,7 +149,7 @@ export const errorHandlerMiddleware: ErrorRequestHandler = (
     return;
   }
 
-  // 5. Unhandled Programmer / Internal Server Exceptions
+  // 6. Unhandled Programmer / Internal Server Exceptions
   logger.error(
     {
       requestId,
