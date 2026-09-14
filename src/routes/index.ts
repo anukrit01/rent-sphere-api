@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { healthRoutes } from './health.routes.js';
 import { authRoutes } from './auth.routes.js';
+import { categoryRoutes } from './category.routes.js';
+import { assetRoutes } from './asset.routes.js';
 
 const apiRouter = Router();
 
@@ -9,5 +11,11 @@ apiRouter.use('/health', healthRoutes);
 
 // Authentication routes (/api/v1/auth)
 apiRouter.use('/auth', authRoutes);
+
+// Equipment Category taxonomy routes (/api/v1/categories)
+apiRouter.use('/categories', categoryRoutes);
+
+// Equipment Asset routes (/api/v1/assets)
+apiRouter.use('/assets', assetRoutes);
 
 export { apiRouter };
