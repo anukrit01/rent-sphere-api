@@ -1,6 +1,7 @@
 import { Router, RequestHandler } from 'express';
 import { UserRole } from '@prisma/client';
 import { assetController } from '../controllers/asset.controller.js';
+import { assetImageController } from '../controllers/asset-image.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { authorize } from '../middleware/authorize.middleware.js';
 import { validateRequest } from '../middleware/validate.middleware.js';
@@ -10,12 +11,13 @@ import {
   createAssetSchema,
   updateAssetSchema,
 } from '../validators/asset.validator.js';
+import {
+  reorderImagesSchema,
+  assetImageParamsSchema,
+} from '../validators/asset-image.validator.js';
+import { uploadAssetImages } from '../middleware/upload.middleware.js';
 import { verifyAccessToken } from '../utils/token.js';
 
-/**
- * Optional authentication middleware: extracts user claims if a valid Bearer token is passed,
- * but allows unauthenticated requests to pass through cleanly.
- */
 const optionalAuthenticate: RequestHandler = (req, _res, next) => {
   const authHeader = req.header('Authorization');
   if (!authHeader) return next();
@@ -59,7 +61,54 @@ assetRoutes.get(
 );
 
 /**
- * Asset detail with optional authentication (allows owner/admin to preview drafts)
+ * Standalone direct image upload (for multi-step listing wizard)
+ */
+assetRoutes.post(
+  '/upload-images',
+  authenticate,
+  authorize(UserRole.LEASER, UserRole.ADMIN),
+  uploadAssetImages,
+  assetImageController.uploadDirect
+);
+
+/**
+ * Image sub-routes attached to asset
+ */
+assetRoutes.post(
+  '/:id/images',
+  authenticate,
+  authorize(UserRole.LEASER, UserRole.ADMIN),
+  validateRequest({ params: uuidParamSchema }),
+  uploadAssetImages,
+  assetImageController.uploadImages
+);
+
+assetRoutes.delete(
+  '/:id/images/:imageId',
+  authenticate,
+  authorize(UserRole.LEASER, UserRole.ADMIN),
+  validateRequest({ params: assetImageParamsSchema }),
+  assetImageController.deleteImage
+);
+
+assetRoutes.patch(
+  '/:id/images/:imageId/cover',
+  authenticate,
+  authorize(UserRole.LEASER, UserRole.ADMIN),
+  validateRequest({ params: assetImageParamsSchema }),
+  assetImageController.setCoverImage
+);
+
+assetRoutes.patch(
+  '/:id/images/reorder',
+  authenticate,
+  authorize(UserRole.LEASER, UserRole.ADMIN),
+  validateRequest({ params: uuidParamSchema, body: reorderImagesSchema }),
+  assetImageController.reorderImages
+);
+
+/**
+ * Asset detail with optional authentication
  */
 assetRoutes.get(
   '/:id',
