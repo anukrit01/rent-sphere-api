@@ -1,12 +1,12 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
-import { AnyZodObject, ZodEffects, ZodError } from 'zod';
+import { ZodSchema, ZodError } from 'zod';
 import { BadRequestError } from '../errors/app.error.js';
 import { ApiErrorDetail } from '../types/index.js';
 
 export interface ValidationTargetSchemas {
-  body?: AnyZodObject | ZodEffects<AnyZodObject>;
-  query?: AnyZodObject | ZodEffects<AnyZodObject>;
-  params?: AnyZodObject | ZodEffects<AnyZodObject>;
+  body?: ZodSchema;
+  query?: ZodSchema;
+  params?: ZodSchema;
 }
 
 /**

@@ -84,6 +84,7 @@ model User {
   bookings      Booking[]      @relation("RenterBookings")
   reviews       Review[]       @relation("ReviewAuthor")
   refreshTokens RefreshToken[]
+  statusChanges BookingStatusHistory[] @relation("StatusChanger")
 
   @@map("users")
 }
@@ -252,6 +253,7 @@ model Booking {
   // Relations
   renter User  @relation("RenterBookings", fields: [renterId], references: [id], onDelete: Cascade)
   asset  Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  statusHistory BookingStatusHistory[]
 
   // Indexes
   @@index([assetId, startDate, endDate], name: "idx_booking_availability")
@@ -305,4 +307,22 @@ model RefreshToken {
   @@index([userId], name: "idx_refresh_token_user")
   @@index([expiresAt], name: "idx_refresh_token_expires")
   @@map("refresh_tokens")
+}
+
+
+/// Auditable booking lifecycle history tracking status transitions.
+model BookingStatusHistory {
+  id         String        @id @default(uuid())
+  bookingId  String        @map("booking_id")
+  fromStatus BookingStatus @map("from_status")
+  toStatus   BookingStatus @map("to_status")
+  changedBy  String        @map("changed_by")
+  reason     String?
+  createdAt  DateTime      @default(now()) @map("created_at")
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  user    User    @relation("StatusChanger", fields: [changedBy], references: [id], onDelete: Cascade)
+
+  @@index([bookingId], name: "idx_booking_status_history_booking")
+  @@map("booking_status_history")
 }
