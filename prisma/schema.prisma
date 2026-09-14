@@ -176,6 +176,7 @@ model AssetImage {
   url       String
   publicId  String @map("public_id")
   sortOrder Int    @default(0) @map("sort_order")
+  isCover   Boolean @default(false) @map("is_cover")
 
   assetId String @map("asset_id")
 
