@@ -27,7 +27,7 @@ export type AssetWithRelations = Asset & {
 
 export interface AssetFindManyOptions extends PaginationOptions {
   where?: Prisma.AssetWhereInput;
-  orderBy?: Prisma.AssetOrderByWithRelationInput;
+  orderBy?: Prisma.AssetOrderByWithRelationInput | Prisma.AssetOrderByWithRelationInput[];
 }
 
 export interface CreateAssetRepoInput {
