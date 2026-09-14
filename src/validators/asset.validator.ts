@@ -133,21 +133,34 @@ export const updateAssetSchema = z.object({
   status: z.nativeEnum(AssetStatus).optional(),
 });
 
+const booleanQueryParam = z.preprocess((val) => {
+  if (val === 'true' || val === true) return true;
+  if (val === 'false' || val === false) return false;
+  return undefined;
+}, z.boolean().optional());
+
 /**
- * Validates query parameters for listing assets.
+ * Comprehensive validation schema for marketplace asset search, multi-faceted filtering, and pagination.
  */
 export const assetQuerySchema = paginationQuerySchema.extend({
+  q: z.string().trim().optional(),
+  category: z.string().trim().optional(),
   categoryId: z.string().trim().optional(),
+  location: z.string().trim().optional(),
   city: z.string().trim().optional(),
   state: z.string().trim().optional(),
+  minPrice: z.coerce.number().min(0, 'minPrice must be non-negative').optional(),
+  maxPrice: z.coerce.number().min(0, 'maxPrice must be non-negative').optional(),
+  minRating: z.coerce.number().min(0).max(5).optional(),
+  condition: z.string().trim().optional(),
+  fuelType: z.nativeEnum(FuelType).optional(),
+  operatorProvided: booleanQueryParam,
+  operatorRequired: booleanQueryParam,
+  deliveryAvailable: booleanQueryParam,
+  availableOnly: booleanQueryParam,
+  featured: booleanQueryParam,
   status: z.nativeEnum(AssetStatus).optional(),
-  featured: z
-    .preprocess((val) => {
-      if (val === 'true' || val === true) return true;
-      if (val === 'false' || val === false) return false;
-      return undefined;
-    }, z.boolean().optional()),
-  sortBy: z.enum(['createdAt', 'pricePerDay', 'rating', 'title']).optional().default('createdAt'),
+  sortBy: z.string().trim().optional().default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).optional().default('desc'),
 });
 

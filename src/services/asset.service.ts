@@ -1,4 +1,4 @@
-import { AssetStatus, Prisma, UserRole } from '@prisma/client';
+import { AssetStatus, AssetCondition, Prisma, UserRole } from '@prisma/client';
 import { assetRepository, AssetRepository, AssetWithRelations } from '../repositories/asset.repository.js';
 import { categoryRepository, CategoryRepository } from '../repositories/category.repository.js';
 import { CreateAssetInput, UpdateAssetInput, AssetQuery } from '../validators/asset.validator.js';
@@ -21,6 +21,7 @@ export interface FormattedAsset {
     url: string;
     publicId: string;
     sortOrder: number;
+    isCover: boolean;
   }>;
   pricePerDay: number;
   pricePerWeek: number | null;
@@ -80,11 +81,31 @@ export class AssetService {
   ) {}
 
   /**
+   * Normalizes human-readable condition labels or raw strings to Prisma AssetCondition enum.
+   */
+  private normalizeCondition(condStr?: string): AssetCondition | undefined {
+    if (!condStr || condStr === 'All') return undefined;
+
+    const upper = condStr.toUpperCase();
+    if (upper.includes('EXCELLENT')) return AssetCondition.EXCELLENT;
+    if (upper.includes('GOOD') || upper.includes('SERVICED')) return AssetCondition.GOOD;
+    if (upper.includes('REBUILT')) return AssetCondition.REBUILT;
+    if (upper.includes('WORKING')) return AssetCondition.WORKING;
+
+    if (Object.values(AssetCondition).includes(condStr as AssetCondition)) {
+      return condStr as AssetCondition;
+    }
+
+    return undefined;
+  }
+
+  /**
    * Format asset entity with related records into the standard RentSphere response contract.
    */
   private formatAsset(asset: AssetWithRelations): FormattedAsset {
     const sortedImages = [...(asset.images || [])].sort((a, b) => a.sortOrder - b.sortOrder);
-    const coverImage = sortedImages[0]?.url ?? null;
+    const coverImageObj = sortedImages.find((img) => img.isCover);
+    const coverImage = coverImageObj?.url ?? sortedImages[0]?.url ?? null;
 
     return {
       id: asset.id,
@@ -101,6 +122,7 @@ export class AssetService {
         url: img.url,
         publicId: img.publicId,
         sortOrder: img.sortOrder,
+        isCover: img.isCover,
       })),
       pricePerDay: asset.pricePerDay,
       pricePerWeek: asset.pricePerWeek,
@@ -154,44 +176,156 @@ export class AssetService {
   }
 
   /**
-   * Public marketplace query: ONLY approved/available assets are returned.
+   * Public marketplace query: Executes native PostgreSQL search, multi-faceted filtering, and pagination.
    */
   async getPublicAssets(query: AssetQuery): Promise<PaginatedResult<FormattedAsset>> {
-    const where: Prisma.AssetWhereInput = {
-      status: { in: [AssetStatus.AVAILABLE, AssetStatus.APPROVED] },
-    };
+    const where: Prisma.AssetWhereInput = {};
 
-    if (query.categoryId) {
-      // Support either UUID or category slug
-      const category = await this.catRepo.findById(query.categoryId) || await this.catRepo.findBySlug(query.categoryId);
+    // 1. Mandatory visibility constraint: only AVAILABLE or APPROVED assets in public marketplace
+    if (query.availableOnly === true) {
+      where.status = AssetStatus.AVAILABLE;
+    } else if (query.status) {
+      where.status = query.status;
+    } else {
+      where.status = { in: [AssetStatus.AVAILABLE, AssetStatus.APPROVED] };
+    }
+
+    // 2. Full-Text Search across 8 dimensions (Section 24)
+    if (query.q && query.q.trim()) {
+      const searchTerm = query.q.trim();
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+        {
+          OR: [
+            { title: { contains: searchTerm, mode: 'insensitive' } },
+            { tagline: { contains: searchTerm, mode: 'insensitive' } },
+            { description: { contains: searchTerm, mode: 'insensitive' } },
+            { city: { contains: searchTerm, mode: 'insensitive' } },
+            { state: { contains: searchTerm, mode: 'insensitive' } },
+            { location: { contains: searchTerm, mode: 'insensitive' } },
+            {
+              specification: {
+                is: {
+                  OR: [
+                    { brand: { contains: searchTerm, mode: 'insensitive' } },
+                    { model: { contains: searchTerm, mode: 'insensitive' } },
+                  ],
+                },
+              },
+            },
+            {
+              category: {
+                is: {
+                  OR: [
+                    { name: { contains: searchTerm, mode: 'insensitive' } },
+                    { slug: { contains: searchTerm, mode: 'insensitive' } },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      ];
+    }
+
+    // 3. Category Filter: supports UUID, slug, or name
+    const categoryParam = (query.category || query.categoryId)?.trim();
+    if (categoryParam && categoryParam !== 'All') {
+      const category =
+        (await this.catRepo.findById(categoryParam)) ||
+        (await this.catRepo.findBySlug(categoryParam)) ||
+        (await this.catRepo.findByName(categoryParam));
+
       if (category) {
         where.categoryId = category.id;
       } else {
-        where.categoryId = query.categoryId;
+        where.categoryId = categoryParam;
       }
     }
 
-    if (query.city) {
+    // 4. Location Filter (City / State / General Hub)
+    if (query.city && query.city.trim() && query.city !== 'All Locations') {
       where.city = { contains: query.city.trim(), mode: 'insensitive' };
     }
 
-    if (query.state) {
+    if (query.state && query.state.trim()) {
       where.state = { contains: query.state.trim(), mode: 'insensitive' };
+    }
+
+    if (query.location && query.location.trim() && query.location !== 'All Locations' && !query.city) {
+      const loc = query.location.trim();
+      where.OR = [
+        { city: { contains: loc, mode: 'insensitive' } },
+        { state: { contains: loc, mode: 'insensitive' } },
+        { location: { contains: loc, mode: 'insensitive' } },
+      ];
+    }
+
+    // 5. Price Range Filter (minPrice / maxPrice)
+    if (query.minPrice !== undefined || query.maxPrice !== undefined) {
+      where.pricePerDay = {};
+      if (query.minPrice !== undefined) {
+        where.pricePerDay.gte = query.minPrice;
+      }
+      if (query.maxPrice !== undefined) {
+        where.pricePerDay.lte = query.maxPrice;
+      }
+    }
+
+    // 6. Rating Filter (minRating)
+    if (query.minRating !== undefined && query.minRating > 0) {
+      where.rating = { gte: query.minRating };
+    }
+
+    // 7. Equipment Condition Filter
+    const normalizedCond = this.normalizeCondition(query.condition);
+    if (normalizedCond) {
+      where.condition = normalizedCond;
+    }
+
+    // 8. Technical Specification Filters (Fuel Type)
+    if (query.fuelType) {
+      where.specification = {
+        is: {
+          fuelType: query.fuelType,
+        },
+      };
+    }
+
+    // 9. Equipment Feature Flags
+    const operatorReq = query.operatorProvided ?? query.operatorRequired;
+    if (operatorReq !== undefined) {
+      where.operatorProvided = operatorReq;
+    }
+
+    if (query.deliveryAvailable !== undefined) {
+      where.deliveryAvailable = query.deliveryAvailable;
     }
 
     if (query.featured !== undefined) {
       where.featured = query.featured;
     }
 
-    const orderBy: Prisma.AssetOrderByWithRelationInput = {};
-    if (query.sortBy === 'pricePerDay') {
-      orderBy.pricePerDay = query.sortOrder || 'asc';
-    } else if (query.sortBy === 'rating') {
-      orderBy.rating = query.sortOrder || 'desc';
-    } else if (query.sortBy === 'title') {
-      orderBy.title = query.sortOrder || 'asc';
+    // 10. Dynamic Sort Order Compilation
+    let orderBy: Prisma.AssetOrderByWithRelationInput | Prisma.AssetOrderByWithRelationInput[];
+    const sortBy = query.sortBy || 'createdAt';
+
+    if (sortBy === 'recommended') {
+      orderBy = [{ featured: 'desc' }, { rating: 'desc' }, { createdAt: 'desc' }];
+    } else if (sortBy === 'price_asc' || (sortBy === 'pricePerDay' && query.sortOrder === 'asc')) {
+      orderBy = { pricePerDay: 'asc' };
+    } else if (sortBy === 'price_desc' || (sortBy === 'pricePerDay' && query.sortOrder === 'desc')) {
+      orderBy = { pricePerDay: 'desc' };
+    } else if (sortBy === 'rating') {
+      orderBy = { rating: query.sortOrder || 'desc' };
+    } else if (sortBy === 'newest') {
+      orderBy = { createdAt: 'desc' };
+    } else if (sortBy === 'title') {
+      orderBy = { title: query.sortOrder || 'asc' };
+    } else if (sortBy === 'pricePerDay') {
+      orderBy = { pricePerDay: query.sortOrder || 'asc' };
     } else {
-      orderBy.createdAt = query.sortOrder || 'desc';
+      orderBy = { createdAt: query.sortOrder || 'desc' };
     }
 
     const paginated = await this.repository.findMany({
@@ -266,7 +400,6 @@ export class AssetService {
    * Create a new machinery listing (Leaser only).
    */
   async createAsset(ownerId: string, dto: CreateAssetInput): Promise<FormattedAsset> {
-    // 1. Verify category exists
     const category =
       (await this.catRepo.findById(dto.categoryId)) ||
       (await this.catRepo.findBySlug(dto.categoryId));
@@ -275,7 +408,6 @@ export class AssetService {
       throw new BadRequestError(`Category '${dto.categoryId}' does not exist`);
     }
 
-    // 2. Standardize image inputs
     const normalizedImages = (dto.images || []).map((img, idx) => {
       if (typeof img === 'string') {
         return { url: img, sortOrder: idx };
@@ -283,7 +415,6 @@ export class AssetService {
       return { url: img.url, publicId: img.publicId, sortOrder: img.sortOrder ?? idx };
     });
 
-    // 3. Create asset record
     const created = await this.repository.create({
       title: dto.title,
       tagline: dto.tagline,
@@ -337,7 +468,6 @@ export class AssetService {
       throw new NotFoundError(`Equipment listing with ID '${id}' not found`);
     }
 
-    // Enforce ownership unless platform admin
     if (userRole !== UserRole.ADMIN && existing.ownerId !== userId) {
       throw new ForbiddenError('You do not have permission to modify this equipment listing');
     }
@@ -399,12 +529,10 @@ export class AssetService {
       throw new NotFoundError(`Equipment listing with ID '${id}' not found`);
     }
 
-    // Enforce ownership unless platform admin
     if (userRole !== UserRole.ADMIN && existing.ownerId !== userId) {
       throw new ForbiddenError('You do not have permission to delete this equipment listing');
     }
 
-    // Check for active or pending bookings
     const activeBookingsCount = await this.repository.countActiveBookings(id);
     if (activeBookingsCount > 0) {
       throw new ConflictError(
