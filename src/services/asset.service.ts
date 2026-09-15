@@ -102,7 +102,7 @@ export class AssetService {
   /**
    * Format asset entity with related records into the standard RentSphere response contract.
    */
-  private formatAsset(asset: AssetWithRelations): FormattedAsset {
+  public formatAsset(asset: AssetWithRelations): FormattedAsset {
     const sortedImages = [...(asset.images || [])].sort((a, b) => a.sortOrder - b.sortOrder);
     const coverImageObj = sortedImages.find((img) => img.isCover);
     const coverImage = coverImageObj?.url ?? sortedImages[0]?.url ?? null;
