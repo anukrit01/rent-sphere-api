@@ -48,6 +48,17 @@ enum FuelType {
   PETROL
 }
 
+enum NotificationType {
+  BOOKING_REQUEST_RECEIVED
+  BOOKING_APPROVED
+  BOOKING_REJECTED
+  BOOKING_CANCELLED
+  ASSET_APPROVED
+  ASSET_REJECTED
+  REVIEW_RECEIVED
+  SYSTEM
+}
+
 enum BookingStatus {
   PENDING
   APPROVED
@@ -86,6 +97,7 @@ model User {
   refreshTokens RefreshToken[]
   statusChanges BookingStatusHistory[] @relation("StatusChanger")
   favorites     Favorite[]
+  notifications Notification[]
 
   @@map("users")
 }
@@ -345,4 +357,22 @@ model Favorite {
   @@index([userId], name: "idx_favorite_user")
   @@index([assetId], name: "idx_favorite_asset")
   @@map("favorites")
+}
+
+/// User in-app notification (Section 37)
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String           @map("user_id")
+  type      NotificationType
+  title     String
+  message   String
+  isRead    Boolean          @default(false) @map("is_read")
+  data      Json?
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead], name: "idx_notification_user_unread")
+  @@index([userId, createdAt], name: "idx_notification_user_created")
+  @@map("notifications")
 }

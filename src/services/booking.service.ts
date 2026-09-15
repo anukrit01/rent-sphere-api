@@ -1,4 +1,4 @@
-import { BookingStatus, Prisma } from '@prisma/client';
+import { BookingStatus, NotificationType, Prisma } from '@prisma/client';
 import { bookingRepository, BookingRepository, BookingWithRelations } from '../repositories/booking.repository.js';
 import { assetRepository, AssetRepository } from '../repositories/asset.repository.js';
 import {
@@ -9,6 +9,7 @@ import {
 import { NotFoundError, BadRequestError, ForbiddenError, BookingUnavailableError } from '../errors/app.error.js';
 import { PaginatedResult } from '../repositories/base.repository.js';
 import { AuthUser } from '../middleware/auth.middleware.js';
+import { notificationService, NotificationService } from './notification.service.js';
 
 export interface FormattedBooking {
   id: string;
@@ -73,7 +74,8 @@ export interface FormattedBooking {
 export class BookingService {
   constructor(
     private readonly bookingRepo: BookingRepository = bookingRepository,
-    private readonly assetRepo: AssetRepository = assetRepository
+    private readonly assetRepo: AssetRepository = assetRepository,
+    private readonly notifService: NotificationService = notificationService
   ) {}
 
   /**
@@ -166,6 +168,15 @@ export class BookingService {
         status: BookingStatus.PENDING,
       },
       'Rental booking request initiated by renter'
+    );
+
+    // Notify equipment owner of new booking request (Section 37)
+    await this.notifService.sendNotification(
+      calculation.asset.ownerId,
+      NotificationType.BOOKING_REQUEST_RECEIVED,
+      'New Booking Request Received',
+      `You have received a new booking request for '${calculation.asset.title}'.`,
+      { bookingId: booking.id, assetId: booking.assetId }
     );
 
     return this.formatBooking(booking);
@@ -277,6 +288,15 @@ export class BookingService {
       throw err;
     }
 
+    // Notify renter of approved booking (Section 37)
+    await this.notifService.sendNotification(
+      booking.renterId,
+      NotificationType.BOOKING_APPROVED,
+      'Booking Request Approved',
+      `Your booking request for '${booking.asset.title}' has been approved!`,
+      { bookingId: updated.id, assetId: updated.assetId }
+    );
+
     return this.formatBooking(updated);
   }
 
@@ -309,6 +329,15 @@ export class BookingService {
       user.id,
       rejectionReason || 'Booking rejected by equipment owner',
       { rejectionReason: rejectionReason || null }
+    );
+
+    // Notify renter of rejected booking (Section 37)
+    await this.notifService.sendNotification(
+      booking.renterId,
+      NotificationType.BOOKING_REJECTED,
+      'Booking Request Rejected',
+      `Your booking request for '${booking.asset.title}' was rejected.${rejectionReason ? ` Reason: ${rejectionReason}` : ''}`,
+      { bookingId: updated.id, assetId: updated.assetId, rejectionReason: rejectionReason || null }
     );
 
     return this.formatBooking(updated);
@@ -344,6 +373,16 @@ export class BookingService {
       BookingStatus.CANCELLED,
       user.id,
       reason || `Booking cancelled by ${actor}`
+    );
+
+    // Notify counterparty of cancellation (Section 37)
+    const recipientId = isRenter ? booking.asset.ownerId : booking.renterId;
+    await this.notifService.sendNotification(
+      recipientId,
+      NotificationType.BOOKING_CANCELLED,
+      'Booking Cancelled',
+      `The booking for '${booking.asset.title}' was cancelled.${reason ? ` Reason: ${reason}` : ''}`,
+      { bookingId: updated.id, assetId: updated.assetId, cancelledBy: user.id, reason: reason || null }
     );
 
     return this.formatBooking(updated);
