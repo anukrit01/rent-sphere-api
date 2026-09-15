@@ -188,6 +188,128 @@ export class BookingRepository extends BaseRepository {
       },
     });
   }
+
+  /**
+   * Queries for existing bookings that conflict with the target date range.
+   * Mathematical overlap: (existing.startDate <= targetEndDate) AND (existing.endDate >= targetStartDate)
+   * Only APPROVED and ACTIVE bookings reserve the equipment.
+   */
+  async findConflictingBookings(
+    assetId: string,
+    startDate: Date,
+    endDate: Date,
+    excludeBookingId?: string
+  ) {
+    return this.db.booking.findMany({
+      where: {
+        assetId,
+        status: { in: [BookingStatus.APPROVED, BookingStatus.ACTIVE] },
+        startDate: { lte: endDate },
+        endDate: { gte: startDate },
+        ...(excludeBookingId ? { id: { not: excludeBookingId } } : {}),
+      },
+      select: {
+        id: true,
+        startDate: true,
+        endDate: true,
+        status: true,
+        renterId: true,
+      },
+    });
+  }
+
+  /**
+   * Fetches all current and future reserved date windows for an asset.
+   */
+  async getReservedDateRanges(assetId: string) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return this.db.booking.findMany({
+      where: {
+        assetId,
+        status: { in: [BookingStatus.APPROVED, BookingStatus.ACTIVE] },
+        endDate: { gte: today },
+      },
+      orderBy: { startDate: 'asc' },
+      select: {
+        id: true,
+        startDate: true,
+        endDate: true,
+        status: true,
+      },
+    });
+  }
+
+  /**
+   * Atomically approves a booking with pessimistic conflict validation.
+   * If an overlapping booking was approved concurrently, throws BookingUnavailableError and aborts.
+   */
+  async approveBookingWithConflictGuard(
+    bookingId: string,
+    changedBy: string,
+    reason: string = 'Booking approved by equipment owner'
+  ): Promise<BookingWithRelations> {
+    return this.db.$transaction(async (tx: Prisma.TransactionClient) => {
+      // 1. Fetch target booking
+      const booking = await tx.booking.findUnique({
+        where: { id: bookingId },
+        include: {
+          asset: {
+            select: { id: true, ownerId: true, title: true },
+          },
+        },
+      });
+
+      if (!booking) {
+        throw new Error('BOOKING_NOT_FOUND');
+      }
+
+      if (booking.status !== BookingStatus.PENDING) {
+        throw new Error(`INVALID_STATUS:${booking.status}`);
+      }
+
+      // 2. Concurrency check for overlapping approved/active bookings
+      const conflicts = await tx.booking.findMany({
+        where: {
+          assetId: booking.assetId,
+          status: { in: [BookingStatus.APPROVED, BookingStatus.ACTIVE] },
+          startDate: { lte: booking.endDate },
+          endDate: { gte: booking.startDate },
+          id: { not: bookingId },
+        },
+      });
+
+      if (conflicts.length > 0) {
+        throw new Error('BOOKING_CONFLICT');
+      }
+
+      // 3. Atomically update status
+      await tx.booking.update({
+        where: { id: bookingId },
+        data: {
+          status: BookingStatus.APPROVED,
+        },
+      });
+
+      // 4. Create audit status history record
+      await tx.bookingStatusHistory.create({
+        data: {
+          bookingId,
+          fromStatus: BookingStatus.PENDING,
+          toStatus: BookingStatus.APPROVED,
+          changedBy,
+          reason,
+        },
+      });
+
+      return tx.booking.findUniqueOrThrow({
+        where: { id: bookingId },
+        include: BOOKING_INCLUDE,
+      }) as unknown as BookingWithRelations;
+    });
+  }
+
 }
 
 export const bookingRepository = new BookingRepository();

@@ -83,3 +83,26 @@ export type UpdateBookingStatusInput = z.infer<typeof updateBookingStatusSchema>
 export type RejectBookingInput = z.infer<typeof rejectBookingSchema>;
 export type CancelBookingInput = z.infer<typeof cancelBookingSchema>;
 export type BookingQueryInput = z.infer<typeof bookingQuerySchema>;
+
+/**
+ * Validates query parameters for asset availability check.
+ */
+export const checkAvailabilityQuerySchema = z
+  .object({
+    startDate: z.coerce.date().optional(),
+    endDate: z.coerce.date().optional(),
+  })
+  .refine(
+    (data) => {
+      if (data.startDate && data.endDate) {
+        return data.endDate > data.startDate;
+      }
+      return true;
+    },
+    {
+      message: 'End date must be chronologically after start date',
+      path: ['endDate'],
+    }
+  );
+
+export type CheckAvailabilityQueryInput = z.infer<typeof checkAvailabilityQuerySchema>;

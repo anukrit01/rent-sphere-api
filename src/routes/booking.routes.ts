@@ -10,12 +10,20 @@ import {
   updateBookingStatusSchema,
   rejectBookingSchema,
   cancelBookingSchema,
+  checkAvailabilityQuerySchema,
 } from '../validators/booking.validator.js';
 
 const router = Router();
 
 // All booking operations require authentication
 router.use(authenticate);
+
+// Check asset availability and reserved calendar intervals
+router.get(
+  '/availability/:id',
+  validateRequest({ params: uuidParamSchema, query: checkAvailabilityQuerySchema }),
+  bookingController.getAssetAvailability
+);
 
 // Cost calculation estimation endpoint
 router.post(

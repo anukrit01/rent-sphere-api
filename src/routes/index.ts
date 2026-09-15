@@ -4,6 +4,7 @@ import { authRoutes } from './auth.routes.js';
 import { categoryRoutes } from './category.routes.js';
 import { assetRoutes } from './asset.routes.js';
 import { bookingRoutes } from './booking.routes.js';
+import { userRoutes } from './user.routes.js';
 
 const apiRouter = Router();
 
@@ -23,3 +24,6 @@ apiRouter.use('/assets', assetRoutes);
 apiRouter.use('/bookings', bookingRoutes);
 
 export { apiRouter };
+
+// User-specific resource routes (/api/v1/users)
+apiRouter.use('/users', userRoutes);

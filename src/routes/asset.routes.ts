@@ -1,6 +1,9 @@
 import { Router, RequestHandler } from 'express';
 import { UserRole } from '@prisma/client';
 import { assetController } from '../controllers/asset.controller.js';
+import { bookingController } from '../controllers/booking.controller.js';
+import { favoriteController } from '../controllers/favorite.controller.js';
+import { checkAvailabilityQuerySchema } from '../validators/booking.validator.js';
 import { assetImageController } from '../controllers/asset-image.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { authorize } from '../middleware/authorize.middleware.js';
@@ -47,6 +50,16 @@ assetRoutes.get(
   '/',
   validateRequest({ query: assetQuerySchema }),
   assetController.getAssets
+);
+
+/**
+ * Equipment availability check & reserved calendar intervals (Public)
+ * GET /api/v1/assets/:id/availability
+ */
+assetRoutes.get(
+  '/:id/availability',
+  validateRequest({ params: uuidParamSchema, query: checkAvailabilityQuerySchema }),
+  bookingController.getAssetAvailability
 );
 
 /**
@@ -151,3 +164,27 @@ assetRoutes.delete(
 );
 
 export { assetRoutes };
+
+/**
+ * Asset Favorites Management (Section 35)
+ */
+assetRoutes.post(
+  '/:id/favorite',
+  authenticate,
+  validateRequest({ params: uuidParamSchema }),
+  favoriteController.addFavorite
+);
+
+assetRoutes.delete(
+  '/:id/favorite',
+  authenticate,
+  validateRequest({ params: uuidParamSchema }),
+  favoriteController.removeFavorite
+);
+
+assetRoutes.get(
+  '/:id/favorite',
+  authenticate,
+  validateRequest({ params: uuidParamSchema }),
+  favoriteController.checkFavoriteStatus
+);

@@ -99,6 +99,20 @@ export class BookingController {
     );
     sendSuccess(res, booking, 200, { message: 'Booking status updated successfully' });
   });
+
+  /**
+   * GET /api/v1/assets/:id/availability or GET /api/v1/bookings/availability/:id
+   */
+  getAssetAvailability = asyncHandler(async (req: Request, res: Response): Promise<void> => {
+    const assetId = req.params.id as string;
+    const { startDate, endDate } = req.query as { startDate?: string; endDate?: string };
+    const start = startDate ? new Date(startDate) : undefined;
+    const end = endDate ? new Date(endDate) : undefined;
+
+    const result = await this.service.checkAssetAvailability(assetId, start, end);
+    sendSuccess(res, result, 200);
+  });
+
 }
 
 export const bookingController = new BookingController();

@@ -6,7 +6,7 @@ import {
   CreateBookingInput,
   BookingQueryInput,
 } from '../validators/booking.validator.js';
-import { NotFoundError, BadRequestError, ForbiddenError } from '../errors/app.error.js';
+import { NotFoundError, BadRequestError, ForbiddenError, BookingUnavailableError } from '../errors/app.error.js';
 import { PaginatedResult } from '../repositories/base.repository.js';
 import { AuthUser } from '../middleware/auth.middleware.js';
 
@@ -133,6 +133,19 @@ export class BookingService {
       throw new BadRequestError('You cannot rent your own equipment');
     }
 
+    // Double-booking prevention check (Section 31)
+    const conflicts = await this.bookingRepo.findConflictingBookings(
+      input.assetId,
+      input.startDate,
+      input.endDate
+    );
+
+    if (conflicts.length > 0) {
+      throw new BookingUnavailableError(
+        'The equipment is already reserved for the selected dates. Please choose different dates.'
+      );
+    }
+
     const booking = await this.bookingRepo.create(
       {
         assetId: input.assetId,
@@ -239,19 +252,30 @@ export class BookingService {
       throw new ForbiddenError('Only the equipment owner or an administrator can approve this booking');
     }
 
-    if (booking.status !== BookingStatus.PENDING) {
-      throw new BadRequestError(
-        `Cannot approve booking with current status '${booking.status}'. Only PENDING bookings can be approved.`
+    let updated: BookingWithRelations;
+    try {
+      updated = await this.bookingRepo.approveBookingWithConflictGuard(
+        id,
+        user.id,
+        'Booking approved by equipment owner'
       );
+    } catch (err: any) {
+      if (err.message === 'BOOKING_NOT_FOUND') {
+        throw new NotFoundError('Booking not found');
+      }
+      if (err.message.startsWith('INVALID_STATUS:')) {
+        const current = err.message.split(':')[1];
+        throw new BadRequestError(
+          `Cannot approve booking with current status '${current}'. Only PENDING bookings can be approved.`
+        );
+      }
+      if (err.message === 'BOOKING_CONFLICT') {
+        throw new BookingUnavailableError(
+          'Cannot approve booking: equipment is already reserved for the selected dates by another approved booking.'
+        );
+      }
+      throw err;
     }
-
-    const updated = await this.bookingRepo.updateStatusWithHistory(
-      id,
-      booking.status,
-      BookingStatus.APPROVED,
-      user.id,
-      'Booking approved by equipment owner'
-    );
 
     return this.formatBooking(updated);
   }
@@ -475,6 +499,44 @@ export class BookingService {
       })),
     };
   }
+
+  /**
+   * Checks asset availability for a date window and returns booked calendar blocks.
+   */
+  async checkAssetAvailability(assetId: string, startDate?: Date, endDate?: Date) {
+    const asset = await this.assetRepo.findById(assetId);
+    if (!asset) {
+      throw new NotFoundError('Equipment listing not found');
+    }
+
+    const reserved = await this.bookingRepo.getReservedDateRanges(assetId);
+
+    let isAvailable = true;
+    let conflicts: any[] = [];
+
+    if (startDate && endDate) {
+      conflicts = await this.bookingRepo.findConflictingBookings(assetId, startDate, endDate);
+      isAvailable = conflicts.length === 0;
+    }
+
+    return {
+      assetId,
+      isAvailable,
+      conflicts: conflicts.map((c) => ({
+        id: c.id,
+        startDate: c.startDate instanceof Date ? c.startDate.toISOString().split('T')[0]! : String(c.startDate),
+        endDate: c.endDate instanceof Date ? c.endDate.toISOString().split('T')[0]! : String(c.endDate),
+        status: c.status,
+      })),
+      reservedRanges: reserved.map((r) => ({
+        id: r.id,
+        startDate: r.startDate instanceof Date ? r.startDate.toISOString().split('T')[0]! : String(r.startDate),
+        endDate: r.endDate instanceof Date ? r.endDate.toISOString().split('T')[0]! : String(r.endDate),
+        status: r.status,
+      })),
+    };
+  }
+
 }
 
 export const bookingService = new BookingService();

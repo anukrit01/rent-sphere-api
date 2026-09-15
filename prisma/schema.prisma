@@ -80,11 +80,12 @@ model User {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  assets        Asset[]        @relation("OwnerAssets")
-  bookings      Booking[]      @relation("RenterBookings")
-  reviews       Review[]       @relation("ReviewAuthor")
+  assets        Asset[]                @relation("OwnerAssets")
+  bookings      Booking[]              @relation("RenterBookings")
+  reviews       Review[]               @relation("ReviewAuthor")
   refreshTokens RefreshToken[]
   statusChanges BookingStatusHistory[] @relation("StatusChanger")
+  favorites     Favorite[]
 
   @@map("users")
 }
@@ -162,6 +163,7 @@ model Asset {
   specification AssetSpecification?
   bookings      Booking[]
   reviews       Review[]
+  favorites     Favorite[]
 
   // Indexes
   @@index([categoryId, status], name: "idx_asset_category_status")
@@ -173,10 +175,10 @@ model Asset {
 
 /// Cloudinary image URL for an asset, with display ordering.
 model AssetImage {
-  id        String @id @default(uuid())
+  id        String  @id @default(uuid())
   url       String
-  publicId  String @map("public_id")
-  sortOrder Int    @default(0) @map("sort_order")
+  publicId  String  @map("public_id")
+  sortOrder Int     @default(0) @map("sort_order")
   isCover   Boolean @default(false) @map("is_cover")
 
   assetId String @map("asset_id")
@@ -251,8 +253,8 @@ model Booking {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  renter User  @relation("RenterBookings", fields: [renterId], references: [id], onDelete: Cascade)
-  asset  Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  renter        User                   @relation("RenterBookings", fields: [renterId], references: [id], onDelete: Cascade)
+  asset         Asset                  @relation(fields: [assetId], references: [id], onDelete: Cascade)
   statusHistory BookingStatusHistory[]
 
   // Indexes
@@ -309,7 +311,6 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
-
 /// Auditable booking lifecycle history tracking status transitions.
 model BookingStatusHistory {
   id         String        @id @default(uuid())
@@ -325,4 +326,20 @@ model BookingStatusHistory {
 
   @@index([bookingId], name: "idx_booking_status_history_booking")
   @@map("booking_status_history")
+}
+
+/// Equipment bookmarked by a user for quick access.
+model Favorite {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  assetId   String   @map("asset_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, assetId], name: "uq_user_asset_favorite")
+  @@index([userId], name: "idx_favorite_user")
+  @@index([assetId], name: "idx_favorite_asset")
+  @@map("favorites")
 }
