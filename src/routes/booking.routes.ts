@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { bookingController } from '../controllers/booking.controller.js';
+import { reviewController } from '../controllers/review.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { validateRequest } from '../middleware/validate.middleware.js';
 import { uuidParamSchema } from '../validators/common.validator.js';
@@ -89,3 +90,10 @@ router.patch(
 );
 
 export { router as bookingRoutes };
+
+// Get review for booking
+router.get(
+  '/:id/review',
+  validateRequest({ params: uuidParamSchema }),
+  reviewController.getBookingReview
+);

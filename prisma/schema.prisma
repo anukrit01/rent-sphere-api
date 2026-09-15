@@ -256,6 +256,7 @@ model Booking {
   renter        User                   @relation("RenterBookings", fields: [renterId], references: [id], onDelete: Cascade)
   asset         Asset                  @relation(fields: [assetId], references: [id], onDelete: Cascade)
   statusHistory BookingStatusHistory[]
+  review        Review?
 
   // Indexes
   @@index([assetId, startDate, endDate], name: "idx_booking_availability")
@@ -275,19 +276,21 @@ model Review {
   projectType   String? @map("project_type")
 
   // Foreign keys
-  authorId String @map("author_id")
-  assetId  String @map("asset_id")
+  authorId  String  @map("author_id")
+  assetId   String  @map("asset_id")
+  bookingId String? @unique @map("booking_id")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  author User  @relation("ReviewAuthor", fields: [authorId], references: [id], onDelete: Cascade)
-  asset  Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  author  User     @relation("ReviewAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  asset   Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  booking Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
 
-  // Constraints — one review per author per asset
-  @@unique([authorId, assetId], name: "uq_review_author_asset")
+  // Indexes
   @@index([assetId], name: "idx_review_asset")
+  @@index([authorId], name: "idx_review_author")
   @@map("reviews")
 }
 
