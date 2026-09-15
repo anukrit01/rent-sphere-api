@@ -1,4 +1,4 @@
-import { BookingStatus } from '@prisma/client';
+import { BookingStatus, NotificationType } from '@prisma/client';
 import { reviewRepository, ReviewRepository, ReviewWithAuthor } from '../repositories/review.repository.js';
 import { assetRepository, AssetRepository } from '../repositories/asset.repository.js';
 import { bookingRepository, BookingRepository } from '../repositories/booking.repository.js';
@@ -6,6 +6,7 @@ import { userRepository, UserRepository } from '../repositories/user.repository.
 import { CreateReviewInput, ReviewQueryInput } from '../validators/review.validator.js';
 import { NotFoundError, BadRequestError, ForbiddenError } from '../errors/app.error.js';
 import { PaginatedResult } from '../repositories/base.repository.js';
+import { notificationService, NotificationService } from './notification.service.js';
 
 export interface FormattedReview {
   id: string;
@@ -25,7 +26,8 @@ export class ReviewService {
     private readonly reviewRepo: ReviewRepository = reviewRepository,
     private readonly assetRepo: AssetRepository = assetRepository,
     private readonly bookingRepo: BookingRepository = bookingRepository,
-    private readonly userRepo: UserRepository = userRepository
+    private readonly userRepo: UserRepository = userRepository,
+    private readonly notifService: NotificationService = notificationService
   ) {}
 
   /**
@@ -81,6 +83,15 @@ export class ReviewService {
       },
       assetId,
       asset.ownerId
+    );
+
+    // Notify equipment owner of new review (Section 37)
+    await this.notifService.sendNotification(
+      asset.ownerId,
+      NotificationType.REVIEW_RECEIVED,
+      'New Review Received',
+      `You received a ${input.rating}-star review for '${asset.title}'.`,
+      { reviewId: review.id, assetId, rating: input.rating, bookingId: input.bookingId }
     );
 
     return this.formatReview(review);

@@ -73,7 +73,7 @@ export class BookingController {
    */
   rejectBooking = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     const user = req.user as AuthUser;
-    const booking = await this.service.rejectBooking(user, req.params.id as string, req.body.rejectionReason);
+    const booking = await this.service.rejectBooking(user, req.params.id as string, req.body.rejectionReason || req.body.reason);
     sendSuccess(res, booking, 200, { message: 'Booking rejected successfully' });
   });
 
