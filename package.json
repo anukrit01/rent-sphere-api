@@ -30,7 +30,8 @@
     "docker:build": "docker build -t rentsphere-api .",
     "docker:up": "docker compose up --build -d",
     "docker:down": "docker compose down",
-    "config:validate:prod": "tsx src/config/validate-production.ts"
+    "config:validate:prod": "tsx src/config/validate-production.ts",
+    "render-build": "npm install && npx prisma generate && npm run build"
   },
   "keywords": [
     "rentsphere",
