@@ -11,12 +11,24 @@ import { NotFoundError } from './errors/app.error.js';
 import { apiRouter } from './routes/index.js';
 import { healthRoutes } from './routes/health.routes.js';
 import { API_BASE_PATH } from './constants/index.js';
+import { setupSwagger } from './docs/swagger.js';
 
 export const createApp = (): Express => {
   const app = express();
 
-  // Security Headers
-  app.use(helmet());
+  // Security Headers (Configured with permissive style/script for Swagger UI and Cloudinary assets)
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          scriptSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", 'data:', 'https:'],
+        },
+      },
+    })
+  );
 
   // CORS Configuration
   const allowedOrigins = env.CORS_ORIGIN.split(',').map((o) => o.trim());
@@ -63,6 +75,9 @@ export const createApp = (): Express => {
 
   // Versioned API routes (/api/v1)
   app.use(API_BASE_PATH, apiRouter);
+
+  // Interactive Swagger UI & OpenAPI Specification routes (/api/docs & /api/v1/docs)
+  setupSwagger(app);
 
   // 404 Handler - delegates to centralized error handling pipeline
   app.use((req: Request, _res: Response, next: NextFunction) => {
