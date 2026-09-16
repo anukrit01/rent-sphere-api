@@ -1,19 +1,39 @@
-import express, { Express, Request, Response } from 'express';
+import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import { pinoHttp } from 'pino-http';
 import { env } from './config/env.js';
 import { logger } from './utils/logger.js';
 import { requestIdMiddleware } from './middleware/request-id.middleware.js';
+import { errorHandlerMiddleware } from './middleware/error.middleware.js';
+import { NotFoundError } from './errors/app.error.js';
 import { apiRouter } from './routes/index.js';
 import { healthRoutes } from './routes/health.routes.js';
-import { API_BASE_PATH, ErrorCode } from './constants/index.js';
+import { API_BASE_PATH } from './constants/index.js';
+import { setupSwagger } from './docs/swagger.js';
 
 export const createApp = (): Express => {
   const app = express();
 
-  // Security Headers
-  app.use(helmet());
+  // Reverse proxy trust in production (Render, Vercel, Cloudflare, AWS ALB)
+  if (env.NODE_ENV === 'production') {
+    app.set('trust proxy', 1);
+  }
+
+  // Security Headers (Configured with permissive style/script for Swagger UI and Cloudinary assets)
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          scriptSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", 'data:', 'https:'],
+        },
+      },
+    })
+  );
 
   // CORS Configuration
   const allowedOrigins = env.CORS_ORIGIN.split(',').map((o) => o.trim());
@@ -31,6 +51,9 @@ export const createApp = (): Express => {
       allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
     })
   );
+
+  // Cookie Parser
+  app.use(cookieParser());
 
   // Body Parsing
   app.use(express.json({ limit: '1mb' }));
@@ -58,16 +81,16 @@ export const createApp = (): Express => {
   // Versioned API routes (/api/v1)
   app.use(API_BASE_PATH, apiRouter);
 
-  // 404 Handler
-  app.use((req: Request, res: Response) => {
-    res.status(404).json({
-      success: false,
-      error: {
-        code: ErrorCode.NOT_FOUND,
-        message: `Cannot ${req.method} ${req.path}`,
-      },
-    });
+  // Interactive Swagger UI & OpenAPI Specification routes (/api/docs & /api/v1/docs)
+  setupSwagger(app);
+
+  // 404 Handler - delegates to centralized error handling pipeline
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    next(new NotFoundError(`Cannot ${req.method} ${req.path}`));
   });
+
+  // Centralized Global Error Handler (must be registered last)
+  app.use(errorHandlerMiddleware);
 
   return app;
 };

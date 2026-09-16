@@ -1,0 +1,49 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: rentsphere-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-rentsphere_db}
+    ports:
+      - "5433:5432"
+    volumes:
+      - rentsphere_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-rentsphere_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rentsphere-network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rentsphere-api
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-rentsphere_db}?schema=public
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-development_jwt_access_secret_key_32_characters_minimum_len!}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-development_jwt_refresh_secret_key_32_characters_minimum_len!}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:4200}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - rentsphere-network
+
+volumes:
+  rentsphere_pgdata:
+    driver: local
+
+networks:
+  rentsphere-network:
+    driver: bridge

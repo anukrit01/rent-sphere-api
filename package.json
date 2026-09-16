@@ -12,7 +12,27 @@
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "clean": "rimraf dist",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "config:validate": "tsx src/config/validate.ts",
+    "db:generate": "prisma generate",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:status": "prisma migrate status",
+    "db:studio": "prisma studio",
+    "db:seed": "prisma db seed",
+    "docker:db:up": "docker compose up -d postgres",
+    "docker:db:down": "docker compose stop postgres",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
+    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage --runInBand",
+    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js tests/unit",
+    "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js tests/integration --runInBand",
+    "docker:build": "docker build -t rentsphere-api .",
+    "docker:up": "docker compose up --build -d",
+    "docker:down": "docker compose down",
+    "config:validate:prod": "tsx src/config/validate-production.ts",
+    "render-build": "npm install && npx prisma generate && npm run build",
+    "db:neon:test": "tsx src/database/validate-neon.ts"
   },
   "keywords": [
     "rentsphere",
@@ -29,23 +49,41 @@
   "license": "UNLICENSED",
   "private": true,
   "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "bcryptjs": "^2.4.3",
+    "cloudinary": "^2.11.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.3.0",
     "pino": "^9.6.0",
     "pino-http": "^10.4.0",
-    "rent-sphere-ui": "file:../rent-sphere-ui",
-    "zod": "^3.24.2"
+    "swagger-ui-express": "^5.0.1",
+    "yaml": "^2.9.1",
+    "zod": "^3.24.2",
+    "pino-pretty": "^13.0.0"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "@types/jest": "^30.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.2.0",
     "@types/node": "^22.13.4",
+    "@types/supertest": "^7.2.1",
+    "@types/swagger-ui-express": "^4.1.8",
     "eslint": "^9.20.1",
-    "pino-pretty": "^13.0.0",
+    "jest": "^30.5.1",
     "prettier": "^3.5.1",
+    "prisma": "^6.19.3",
     "rimraf": "^6.0.1",
+    "supertest": "^7.2.2",
+    "ts-jest": "^29.4.12",
     "tsx": "^4.19.3",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.24.1"
@@ -53,5 +91,8 @@
   "engines": {
     "node": ">=20.0.0",
     "npm": ">=10.0.0"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   }
 }
