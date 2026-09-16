@@ -471,7 +471,7 @@ export class BookingService {
   /**
    * Formats a raw Prisma booking relation record into a standardized API response.
    */
-  private formatBooking(b: BookingWithRelations): FormattedBooking {
+  public formatBooking(b: BookingWithRelations): FormattedBooking {
     const coverImage =
       b.asset.images.find((img) => img.isCover)?.url || b.asset.images[0]?.url || null;
 

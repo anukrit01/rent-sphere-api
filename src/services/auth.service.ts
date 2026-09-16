@@ -16,6 +16,7 @@ import {
   UnauthorizedError,
   NotFoundError,
   TokenExpiredError,
+  ForbiddenError,
 } from '../errors/app.error.js';
 
 export type SanitizedUser = Omit<User, 'password'>;
@@ -92,6 +93,10 @@ export class AuthService {
     const isMatch = await bcrypt.compare(input.password, user.password);
     if (!isMatch) {
       throw new InvalidCredentialsError('Invalid email or password');
+    }
+
+    if (user.isActive === false) {
+      throw new ForbiddenError('Account has been deactivated. Please contact an administrator.');
     }
 
     const tokenPayload = { sub: user.id, email: user.email, role: user.role };
