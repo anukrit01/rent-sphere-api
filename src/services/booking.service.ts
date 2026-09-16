@@ -1,4 +1,4 @@
-import { BookingStatus, NotificationType, Prisma } from '@prisma/client';
+import { BookingStatus, NotificationType, AuditAction, Prisma } from '@prisma/client';
 import { bookingRepository, BookingRepository, BookingWithRelations } from '../repositories/booking.repository.js';
 import { assetRepository, AssetRepository } from '../repositories/asset.repository.js';
 import {
@@ -10,6 +10,7 @@ import { NotFoundError, BadRequestError, ForbiddenError, BookingUnavailableError
 import { PaginatedResult } from '../repositories/base.repository.js';
 import { AuthUser } from '../middleware/auth.middleware.js';
 import { notificationService, NotificationService } from './notification.service.js';
+import { auditLogService, AuditLogService } from './audit-log.service.js';
 
 export interface FormattedBooking {
   id: string;
@@ -75,7 +76,8 @@ export class BookingService {
   constructor(
     private readonly bookingRepo: BookingRepository = bookingRepository,
     private readonly assetRepo: AssetRepository = assetRepository,
-    private readonly notifService: NotificationService = notificationService
+    private readonly notifService: NotificationService = notificationService,
+    private readonly auditService: AuditLogService = auditLogService
   ) {}
 
   /**
@@ -297,6 +299,15 @@ export class BookingService {
       { bookingId: updated.id, assetId: updated.assetId }
     );
 
+    // Audit log booking approval (Section 40)
+    await this.auditService.log(
+      user.id,
+      AuditAction.BOOKING_APPROVED,
+      'Booking',
+      updated.id,
+      { assetId: updated.assetId, renterId: updated.renterId }
+    );
+
     return this.formatBooking(updated);
   }
 
@@ -338,6 +349,15 @@ export class BookingService {
       'Booking Request Rejected',
       `Your booking request for '${booking.asset.title}' was rejected.${rejectionReason ? ` Reason: ${rejectionReason}` : ''}`,
       { bookingId: updated.id, assetId: updated.assetId, rejectionReason: rejectionReason || null }
+    );
+
+    // Audit log booking rejection (Section 40)
+    await this.auditService.log(
+      user.id,
+      AuditAction.BOOKING_REJECTED,
+      'Booking',
+      updated.id,
+      { assetId: updated.assetId, renterId: updated.renterId, reason: rejectionReason }
     );
 
     return this.formatBooking(updated);
@@ -471,7 +491,7 @@ export class BookingService {
   /**
    * Formats a raw Prisma booking relation record into a standardized API response.
    */
-  private formatBooking(b: BookingWithRelations): FormattedBooking {
+  public formatBooking(b: BookingWithRelations): FormattedBooking {
     const coverImage =
       b.asset.images.find((img) => img.isCover)?.url || b.asset.images[0]?.url || null;
 

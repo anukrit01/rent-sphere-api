@@ -59,6 +59,17 @@ enum NotificationType {
   SYSTEM
 }
 
+enum AuditAction {
+  USER_CREATED
+  USER_DISABLED
+  USER_ROLE_CHANGED
+  ASSET_CREATED
+  ASSET_APPROVED
+  ASSET_REJECTED
+  BOOKING_APPROVED
+  BOOKING_REJECTED
+}
+
 enum BookingStatus {
   PENDING
   APPROVED
@@ -86,6 +97,7 @@ model User {
   location    String?
   verified    Boolean  @default(false)
   rating      Float    @default(0)
+  isActive    Boolean  @default(true) @map("is_active")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -98,6 +110,7 @@ model User {
   statusChanges BookingStatusHistory[] @relation("StatusChanger")
   favorites     Favorite[]
   notifications Notification[]
+  auditLogs     AuditLog[]             @relation("AuditActor")
 
   @@map("users")
 }
@@ -375,4 +388,23 @@ model Notification {
   @@index([userId, isRead], name: "idx_notification_user_unread")
   @@index([userId, createdAt], name: "idx_notification_user_created")
   @@map("notifications")
+}
+
+/// Administrative and critical business audit trail (Section 40)
+model AuditLog {
+  id         String      @id @default(uuid())
+  actorId    String?     @map("actor_id")
+  action     AuditAction
+  entityType String      @map("entity_type")
+  entityId   String      @map("entity_id")
+  metadata   Json?
+  createdAt  DateTime    @default(now()) @map("created_at")
+
+  actor User? @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([action], name: "idx_audit_log_action")
+  @@index([entityType, entityId], name: "idx_audit_log_entity")
+  @@index([actorId], name: "idx_audit_log_actor")
+  @@index([createdAt], name: "idx_audit_log_created")
+  @@map("audit_logs")
 }

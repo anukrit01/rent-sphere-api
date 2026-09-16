@@ -6,6 +6,7 @@ import { assetRoutes } from './asset.routes.js';
 import { bookingRoutes } from './booking.routes.js';
 import { userRoutes } from './user.routes.js';
 import { notificationRoutes } from './notification.routes.js';
+import { adminRoutes } from './admin.routes.js';
 
 const apiRouter = Router();
 
@@ -29,5 +30,8 @@ apiRouter.use('/users', userRoutes);
 
 // Notification routes (/api/v1/notifications)
 apiRouter.use('/notifications', notificationRoutes);
+
+// Administration routes (/api/v1/admin)
+apiRouter.use('/admin', adminRoutes);
 
 export { apiRouter };
