@@ -20,6 +20,15 @@ export const envSchema = z
       )
       .default('postgresql://postgres:postgres@localhost:5432/rentsphere_db?schema=public'),
 
+    // Direct Database Connection for Prisma CLI migrations
+    DIRECT_URL: z
+      .string()
+      .refine(
+        (url) => url.startsWith('postgresql://') || url.startsWith('postgres://'),
+        'DIRECT_URL must be a valid PostgreSQL connection string starting with postgresql:// or postgres://'
+      )
+      .optional(),
+
     // Authentication Secrets (Minimum 32 characters for security)
     JWT_ACCESS_SECRET: z
       .string()

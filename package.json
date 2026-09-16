@@ -31,7 +31,8 @@
     "docker:up": "docker compose up --build -d",
     "docker:down": "docker compose down",
     "config:validate:prod": "tsx src/config/validate-production.ts",
-    "render-build": "npm install && npx prisma generate && npm run build"
+    "render-build": "npm install && npx prisma generate && npm run build",
+    "db:neon:test": "tsx src/database/validate-neon.ts"
   },
   "keywords": [
     "rentsphere",
