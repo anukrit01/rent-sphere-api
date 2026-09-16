@@ -1,9 +1,10 @@
-import { AssetStatus, AssetCondition, Prisma, UserRole } from '@prisma/client';
+import { AssetStatus, AssetCondition, Prisma, UserRole, AuditAction } from '@prisma/client';
 import { assetRepository, AssetRepository, AssetWithRelations } from '../repositories/asset.repository.js';
 import { categoryRepository, CategoryRepository } from '../repositories/category.repository.js';
 import { CreateAssetInput, UpdateAssetInput, AssetQuery } from '../validators/asset.validator.js';
 import { NotFoundError, BadRequestError, ForbiddenError, ConflictError } from '../errors/app.error.js';
 import { PaginatedResult } from '../repositories/base.repository.js';
+import { auditLogService, AuditLogService } from './audit-log.service.js';
 import { AuthUser } from '../middleware/auth.middleware.js';
 
 export interface FormattedAsset {
@@ -77,7 +78,8 @@ export interface FormattedAsset {
 export class AssetService {
   constructor(
     private readonly repository: AssetRepository = assetRepository,
-    private readonly catRepo: CategoryRepository = categoryRepository
+    private readonly catRepo: CategoryRepository = categoryRepository,
+    private readonly auditService: AuditLogService = auditLogService
   ) {}
 
   /**
@@ -450,6 +452,15 @@ export class AssetService {
       },
       images: normalizedImages,
     });
+
+    // Audit log asset creation (Section 40)
+    await this.auditService.log(
+      ownerId,
+      AuditAction.ASSET_CREATED,
+      'Asset',
+      created.id,
+      { title: created.title, categoryId: created.categoryId, pricePerDay: Number(created.pricePerDay) }
+    );
 
     return this.formatAsset(created);
   }

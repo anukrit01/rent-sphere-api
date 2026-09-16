@@ -1,10 +1,14 @@
 import { Router } from 'express';
 import { UserRole } from '@prisma/client';
 import { adminController } from '../controllers/admin.controller.js';
+import { auditLogController } from '../controllers/audit-log.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { authorize } from '../middleware/authorize.middleware.js';
 import { validateRequest } from '../middleware/validate.middleware.js';
 import { uuidParamSchema, paginationQuerySchema } from '../validators/common.validator.js';
+import {
+  auditLogQuerySchema,
+} from '../validators/audit-log.validator.js';
 import {
   adminUsersQuerySchema,
   updateUserStatusSchema,
@@ -71,6 +75,15 @@ router.get(
   '/bookings',
   validateRequest({ query: adminBookingsQuerySchema }),
   adminController.getAllBookings
+);
+
+/**
+ * GET /api/v1/admin/audit-logs - Administrative audit trail
+ */
+router.get(
+  '/audit-logs',
+  validateRequest({ query: auditLogQuerySchema }),
+  auditLogController.getAuditLogs
 );
 
 export { router as adminRoutes };

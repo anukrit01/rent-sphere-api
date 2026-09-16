@@ -1,6 +1,7 @@
-import { User, AssetStatus, NotificationType } from '@prisma/client';
+import { User, AssetStatus, NotificationType, AuditAction } from '@prisma/client';
 import { adminRepository, AdminRepository, DashboardMetrics } from '../repositories/admin.repository.js';
 import { notificationService, NotificationService } from './notification.service.js';
+import { auditLogService, AuditLogService } from './audit-log.service.js';
 import {
   AdminUsersQueryInput,
   UpdateUserStatusInput,
@@ -20,7 +21,8 @@ export class AdminService {
     private readonly adminRepo: AdminRepository = adminRepository,
     private readonly notifService: NotificationService = notificationService,
     private readonly assetService: AssetService = defaultAssetService,
-    private readonly bookingService: BookingService = defaultBookingService
+    private readonly bookingService: BookingService = defaultBookingService,
+    private readonly auditService: AuditLogService = auditLogService
   ) {}
 
   /**
@@ -72,6 +74,17 @@ export class AdminService {
       ...(input.verified !== undefined ? { verified: input.verified } : {}),
     });
 
+    // Audit log account status changes (Section 40)
+    if (input.isActive === false) {
+      await this.auditService.log(
+        adminUserId,
+        AuditAction.USER_DISABLED,
+        'User',
+        targetUserId,
+        { previousActive: user.isActive, newActive: false }
+      );
+    }
+
     return excludeFields(updated, ['password']) as SanitizedAdminUser;
   }
 
@@ -117,6 +130,15 @@ export class AdminService {
       { assetId: updated.id }
     );
 
+    // Audit log asset approval (Section 40)
+    await this.auditService.log(
+      _adminUserId,
+      AuditAction.ASSET_APPROVED,
+      'Asset',
+      updated.id,
+      { assetTitle: updated.title, ownerId: asset.ownerId }
+    );
+
     return this.assetService.formatAsset(updated);
   }
 
@@ -154,6 +176,15 @@ export class AdminService {
       'Equipment Listing Rejected',
       `Your equipment listing '${asset.title}' was rejected.${input.reason ? ` Reason: ${input.reason}` : ''}`,
       { assetId: updated.id, reason: input.reason || null }
+    );
+
+    // Audit log asset rejection (Section 40)
+    await this.auditService.log(
+      _adminUserId,
+      AuditAction.ASSET_REJECTED,
+      'Asset',
+      updated.id,
+      { assetTitle: updated.title, ownerId: asset.ownerId, reason: input.reason }
     );
 
     return this.assetService.formatAsset(updated);

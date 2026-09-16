@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { User, UserRole } from '@prisma/client';
+import { User, UserRole, AuditAction } from '@prisma/client';
 import { userRepository, UserRepository } from '../repositories/user.repository.js';
 import { refreshTokenRepository, RefreshTokenRepository } from '../repositories/refresh-token.repository.js';
 import { RegisterInput, LoginInput } from '../validators/auth.validator.js';
@@ -10,6 +10,7 @@ import {
   getRefreshTokenExpiryDate,
 } from '../utils/token.js';
 import { excludeFields } from '../utils/response.js';
+import { auditLogService, AuditLogService } from './audit-log.service.js';
 import {
   DuplicateResourceError,
   InvalidCredentialsError,
@@ -37,7 +38,8 @@ export class AuthService {
 
   constructor(
     private readonly userRepo: UserRepository = userRepository,
-    private readonly tokenRepo: RefreshTokenRepository = refreshTokenRepository
+    private readonly tokenRepo: RefreshTokenRepository = refreshTokenRepository,
+    private readonly auditService: AuditLogService = auditLogService
   ) {}
 
   /**
@@ -73,6 +75,15 @@ export class AuthService {
       userAgent: meta.userAgent,
       ipAddress: meta.ipAddress,
     });
+
+    // Audit log user creation (Section 40)
+    await this.auditService.log(
+      user.id,
+      AuditAction.USER_CREATED,
+      'User',
+      user.id,
+      { email: user.email, name: user.name, role: user.role }
+    );
 
     return {
       user: excludeFields(user, ['password']),
