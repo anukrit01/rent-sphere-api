@@ -1,0 +1,2123 @@
+openapi: 3.0.3
+info:
+  title: RentSphere Heavy Machinery Rental API
+  version: 1.0.0
+  description: |
+    Production-grade RESTful API for RentSphere — India's premier B2B heavy construction equipment rental marketplace.
+    Provides robust endpoints for machinery lifecycle management, availability calendars, booking transactions with strict double-booking prevention, escrow/security deposit accounting, favorites, reviews, real-time notifications, and platform administration.
+  contact:
+    name: RentSphere Engineering Team
+    email: api-support@rentsphere.in
+    url: https://rentsphere.in
+  license:
+    name: Proprietary
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Local Development Server (v1)
+  - url: https://rentsphere-api.onrender.com/api/v1
+    description: Production Render Cloud Deployment
+  - url: /api/v1
+    description: Relative API Gateway
+
+tags:
+  - name: Authentication
+    description: User registration, credentials authentication, JWT token rotation, and profile retrieval.
+  - name: Users
+    description: User personal account management and personal favorites catalog.
+  - name: Categories
+    description: Heavy machinery taxonomy, equipment categorization, and asset counts.
+  - name: Assets
+    description: Equipment listings, full-text search, availability calendar, photo uploads, and cover selection.
+  - name: Bookings
+    description: Rental reservations, cost estimation, atomic double-booking protection, approvals, and cancellations.
+  - name: Favorites
+    description: Saved machinery bookmarks and user wishlist collections.
+  - name: Reviews
+    description: Completed rental reviews, verified contractor feedback, and automated rating aggregates.
+  - name: Notifications
+    description: In-app user notifications, unread counts, and read receipt tracking.
+  - name: Admin
+    description: Platform governance, dashboard analytics, user moderation, equipment review, and audit trail.
+  - name: Health
+    description: System health probes, uptime metrics, and database connectivity.
+
+paths:
+  # ====================================================
+  # Health
+  # ====================================================
+  /health:
+    get:
+      tags:
+        - Health
+      summary: System Health Check
+      description: Returns service status, uptime, timestamp, environment, and PostgreSQL database connectivity.
+      responses:
+        '200':
+          description: System is healthy and database is connected.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: System or database is unhealthy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+  # ====================================================
+  # Authentication
+  # ====================================================
+  /auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register New User
+      description: Creates a new user account with role RENTER or LEASER, hashes password with bcrypt, generates JWT token pair, and sets HTTP-only refresh token cookie.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterInput'
+      responses:
+        '201':
+          description: User registered successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Validation error in registration fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Account with this email already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Authenticate User
+      description: Validates email and password, verifies account is active, returns access token in JSON body, and sets refresh token in secure HTTP-only cookie.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginInput'
+      responses:
+        '200':
+          description: Authentication successful.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Invalid email or password payload format.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '401':
+          description: Invalid email or password credentials.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Account is deactivated/suspended.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+  /auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh Access Token
+      description: Rotates refresh token session using cryptographically secure jti and returns a new access token and rotated refresh token.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  type: string
+                  description: Optional when provided via HTTP-only cookie.
+      responses:
+        '200':
+          description: Token refreshed successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid, expired, or revoked refresh token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: Log Out User
+      description: Revokes refresh token in database and clears the refreshToken cookie.
+      responses:
+        '200':
+          description: Logged out successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleSuccessResponse'
+
+  /auth/me:
+    get:
+      tags:
+        - Authentication
+      summary: Get Current User Profile
+      description: Returns the profile of the currently authenticated user. Sensitive fields like password and hashes are excluded.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Current user profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          description: Unauthenticated request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+  # ====================================================
+  # Users
+  # ====================================================
+  /users/me/favorites:
+    get:
+      tags:
+        - Users
+      summary: Get User Favorites
+      description: Returns paginated list of equipment favorited by the current user.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Paginated favorites list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAssetsResponse'
+        '401':
+          description: Unauthenticated request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+  # ====================================================
+  # Categories
+  # ====================================================
+  /categories:
+    get:
+      tags:
+        - Categories
+      summary: List Equipment Categories
+      description: Retrieves all active machinery categories ordered by sortOrder with real-time asset counts.
+      responses:
+        '200':
+          description: List of categories.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryListResponse'
+
+  /categories/{slug}:
+    get:
+      tags:
+        - Categories
+      summary: Get Category by Slug
+      description: Retrieves a category by its slug URL identifier with its child machinery listings.
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+          description: URL slug identifier of the category (e.g. excavators).
+      responses:
+        '200':
+          description: Category details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryDetailResponse'
+        '404':
+          description: Category not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+  # ====================================================
+  # Assets
+  # ====================================================
+  /assets:
+    get:
+      tags:
+        - Assets
+      summary: Search & List Machinery Listings
+      description: Public multi-criteria search and filter endpoint for heavy machinery with pagination and sorting.
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Text search query across title, description, and brand.
+        - name: categoryId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by equipment category UUID.
+        - name: categorySlug
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by category slug (e.g., excavators).
+        - name: city
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by city location (e.g., Mumbai).
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by state (e.g., Maharashtra).
+        - name: minPrice
+          in: query
+          required: false
+          schema:
+            type: number
+          description: Minimum daily rental rate in INR.
+        - name: maxPrice
+          in: query
+          required: false
+          schema:
+            type: number
+          description: Maximum daily rental rate in INR.
+        - name: available
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Filter only currently available machinery.
+        - name: sortBy
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [createdAt, priceAsc, priceDesc, rating, popular]
+            default: createdAt
+          description: Sort field and direction.
+      responses:
+        '200':
+          description: Paginated search results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAssetsResponse'
+
+    post:
+      tags:
+        - Assets
+      summary: Create Machinery Listing
+      description: Allows a LEASER to create a heavy machinery listing. The asset enters PENDING_REVIEW status until approved by an administrator.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAssetInput'
+      responses:
+        '201':
+          description: Machinery listing created successfully in PENDING_REVIEW status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetDetailResponse'
+        '400':
+          description: Invalid listing payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Only users with the LEASER role can list machinery.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+  /assets/my-assets:
+    get:
+      tags:
+        - Assets
+      summary: Get Leaser's Machinery Fleet
+      description: Returns all machinery listings owned by the authenticated LEASER, including drafts and pending reviews.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/AssetStatus'
+          description: Filter owned assets by status.
+      responses:
+        '200':
+          description: Paginated owned assets.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAssetsResponse'
+        '403':
+          description: Only leasers can access owned machinery fleet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+  /assets/{id}:
+    get:
+      tags:
+        - Assets
+      summary: Get Machinery Details
+      description: Returns full specifications, operational parameters, rental terms, image gallery, category, and owner information for a specific machinery asset.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Machinery asset UUID.
+      responses:
+        '200':
+          description: Machinery details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetDetailResponse'
+        '404':
+          description: Machinery not found or not approved for public viewing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+    patch:
+      tags:
+        - Assets
+      summary: Update Machinery Listing
+      description: Updates machinery details. Caller must be the owner of the equipment or an Administrator.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Machinery asset UUID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAssetInput'
+      responses:
+        '200':
+          description: Machinery updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetDetailResponse'
+        '403':
+          description: Forbidden - Not the equipment owner.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+    delete:
+      tags:
+        - Assets
+      summary: Deactivate Machinery Listing
+      description: Soft-deletes machinery by transitioning status to MAINTENANCE or DEACTIVATED. Prevents deletion if active bookings exist.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Machinery asset UUID.
+      responses:
+        '200':
+          description: Machinery deactivated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleSuccessResponse'
+        '400':
+          description: Cannot delete machinery with active rental bookings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+  /assets/{id}/availability:
+    get:
+      tags:
+        - Assets
+      summary: Check Machinery Availability Calendar
+      description: Returns real-time availability status, next available rental date, and all confirmed reservation blackout date ranges.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Machinery asset UUID.
+      responses:
+        '200':
+          description: Availability calendar data.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityResponse'
+
+  /assets/{id}/images:
+    post:
+      tags:
+        - Assets
+      summary: Upload Machinery Photo
+      description: Uploads an equipment photo to Cloudinary and attaches it to the machinery's gallery.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Machinery asset UUID.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - image
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: Machinery photo file (JPEG, PNG, WebP).
+                isCover:
+                  type: boolean
+                  default: false
+                  description: Set as the primary cover photo.
+      responses:
+        '201':
+          description: Photo uploaded successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleSuccessResponse'
+
+  /assets/{id}/images/{imageId}/cover:
+    patch:
+      tags:
+        - Assets
+      summary: Set Primary Cover Photo
+      description: Designates a specific photo as the primary thumbnail displayed in public search cards.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: imageId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cover photo updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleSuccessResponse'
+
+  /assets/{id}/favorite:
+    post:
+      tags:
+        - Favorites
+      summary: Add to Favorites
+      description: Idempotently bookmarks a machinery asset in the authenticated user's wishlist.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Added to favorites.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleSuccessResponse'
+
+    get:
+      tags:
+        - Favorites
+      summary: Check Favorite Status
+      description: Checks if the specified machinery is in the authenticated user's favorites catalog.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Favorite status boolean.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FavoriteStatusResponse'
+
+    delete:
+      tags:
+        - Favorites
+      summary: Remove from Favorites
+      description: Removes a machinery asset from the authenticated user's wishlist.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Removed from favorites.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleSuccessResponse'
+
+  /assets/{id}/reviews:
+    get:
+      tags:
+        - Reviews
+      summary: Get Public Reviews for Asset
+      description: Returns paginated verified reviews submitted by contractors who completed rentals for this machinery.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Paginated reviews.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedReviewsResponse'
+
+    post:
+      tags:
+        - Reviews
+      summary: Submit Review for Rental
+      description: Allows a contractor who completed a rental booking on this machinery to submit a rating (1-5) and feedback. Automatically recalculates asset and leaser rating aggregates.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReviewInput'
+      responses:
+        '201':
+          description: Review submitted and ratings updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewDetailResponse'
+        '400':
+          description: Review not permitted (booking not completed or already reviewed).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '403':
+          description: Only the contractor who booked the equipment can review it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+  # ====================================================
+  # Bookings
+  # ====================================================
+  /bookings:
+    get:
+      tags:
+        - Bookings
+      summary: List User Bookings
+      description: Retrieves paginated bookings relevant to the user. For RENTERS, returns outgoing rental reservations. For LEASERS, returns incoming reservation requests on their fleet.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/BookingStatus'
+          description: Filter by lifecycle status.
+      responses:
+        '200':
+          description: Paginated bookings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBookingsResponse'
+
+    post:
+      tags:
+        - Bookings
+      summary: Create Rental Booking
+      description: |
+        Creates a new rental reservation in PENDING status.
+        **Atomic Double-Booking Guard**: Evaluates conflicting overlapping reservations. If another active/approved booking exists covering any overlapping day, the transaction aborts with HTTP 409 Conflict.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBookingInput'
+      responses:
+        '201':
+          description: Booking created successfully in PENDING status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingDetailResponse'
+        '400':
+          description: Invalid dates or attempting to rent own equipment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Double booking conflict. Equipment already reserved for selected dates.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+  /bookings/calculate-cost:
+    post:
+      tags:
+        - Bookings
+      summary: Calculate Rental Price Preview
+      description: Calculates rental duration, subtotal, operator fees, delivery fees, security deposit, and estimated total before submitting a booking.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CalculateBookingInput'
+      responses:
+        '200':
+          description: Calculated pricing breakdown.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingCostResponse'
+
+  /bookings/{id}:
+    get:
+      tags:
+        - Bookings
+      summary: Get Booking Details
+      description: Returns detailed booking snapshot, pricing breakdown, equipment specifications, and lifecycle status transition history.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Booking details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingDetailResponse'
+        '403':
+          description: Caller is neither the renter, owner, nor administrator.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+  /bookings/{id}/approve:
+    patch:
+      tags:
+        - Bookings
+      summary: Approve Rental Booking
+      description: Allows the equipment owner (LEASER) to approve a pending booking. Locks reservation dates against concurrent bookings and dispatches an alert notification to the renter.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Booking approved. Status transitions to APPROVED.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingDetailResponse'
+        '403':
+          description: Only the owner of the equipment can approve the booking.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+        '409':
+          description: Cannot approve because a conflicting booking was already approved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+  /bookings/{id}/reject:
+    patch:
+      tags:
+        - Bookings
+      summary: Reject Rental Booking
+      description: Allows the equipment owner to decline a pending reservation with an explanation reason. Dispatches notification to renter.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: Optional explanation for rejection.
+      responses:
+        '200':
+          description: Booking rejected. Status transitions to REJECTED.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingDetailResponse'
+
+  /bookings/{id}/cancel:
+    patch:
+      tags:
+        - Bookings
+      summary: Cancel Rental Booking
+      description: Allows contractor to cancel their pending/approved booking prior to dispatch. Releases reserved dates in the availability calendar.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Booking cancelled. Status transitions to CANCELLED.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingDetailResponse'
+
+  # ====================================================
+  # Notifications
+  # ====================================================
+  /notifications:
+    get:
+      tags:
+        - Notifications
+      summary: List User Notifications
+      description: Returns paginated notifications for the authenticated user, along with unread counter.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: unreadOnly
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Filter only unread notifications.
+      responses:
+        '200':
+          description: Paginated notifications.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedNotificationsResponse'
+
+  /notifications/{id}/read:
+    patch:
+      tags:
+        - Notifications
+      summary: Mark Notification as Read
+      description: Marks a specific notification message as read.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Notification marked as read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleSuccessResponse'
+
+  /notifications/read-all:
+    patch:
+      tags:
+        - Notifications
+      summary: Mark All Notifications as Read
+      description: Bulk marks all pending unread notifications for current user as read.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: All notifications marked as read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleSuccessResponse'
+
+  # ====================================================
+  # Admin APIs
+  # ====================================================
+  /admin/dashboard:
+    get:
+      tags:
+        - Admin
+      summary: Platform Analytics & Dashboard
+      description: Returns platform-wide business metrics covering user counts, fleet status breakdown, booking lifecycle totals, revenue aggregates, and active escrow.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Global analytics metrics.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardResponse'
+        '403':
+          description: Access restricted to platform administrators.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+  /admin/users:
+    get:
+      tags:
+        - Admin
+      summary: Platform User Management
+      description: Admin-level paginated search of users with role, verification, and suspension status filters.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: role
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/UserRole'
+        - name: isActive
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Paginated user list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedUsersResponse'
+
+  /admin/users/{id}/status:
+    patch:
+      tags:
+        - Admin
+      summary: Suspend / Activate User Account
+      description: Toggles user account active status or verified status. Self-deactivation by admin is protected.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserStatusInput'
+      responses:
+        '200':
+          description: User status updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Cannot deactivate own administrator account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiErrorResponse'
+
+  /admin/assets/pending:
+    get:
+      tags:
+        - Admin
+      summary: List Machinery Awaiting Review
+      description: Retrieves all machinery submissions with status PENDING_REVIEW requiring moderation approval.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Submissions awaiting review.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAssetsResponse'
+
+  /admin/assets/{id}/approve:
+    patch:
+      tags:
+        - Admin
+      summary: Approve Machinery Submission
+      description: Approves machinery listing, transitioning status to AVAILABLE and triggering an alert notification to the equipment owner.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Machinery approved. Status transitions to AVAILABLE.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetDetailResponse'
+
+  /admin/assets/{id}/reject:
+    patch:
+      tags:
+        - Admin
+      summary: Reject Machinery Submission
+      description: Rejects machinery listing with moderation feedback. Status transitions to REJECTED and owner is notified.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: Administrative rejection rationale.
+      responses:
+        '200':
+          description: Machinery rejected. Status transitions to REJECTED.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetDetailResponse'
+
+  /admin/bookings:
+    get:
+      tags:
+        - Admin
+      summary: Global Rental Bookings Audit
+      description: Cross-platform audit trail of all bookings across all users with full relational history.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/BookingStatus'
+      responses:
+        '200':
+          description: Platform bookings audit list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBookingsResponse'
+
+  /admin/audit-logs:
+    get:
+      tags:
+        - Admin
+      summary: System Audit Logs
+      description: Queries the immutable security audit log capturing platform actions (user creation, account suspensions, listings, approvals, rejections) with credential sanitization.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: action
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/AuditAction'
+        - name: entityType
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: entityId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: actorId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paginated immutable audit log trail.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAuditLogsResponse'
+
+# ====================================================
+# Components & Schemas
+# ====================================================
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Pass access token as Bearer token in the Authorization header.
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: refreshToken
+      description: HTTP-only session cookie for token refresh.
+
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      description: Page number for pagination.
+    LimitParam:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Items per page.
+
+  schemas:
+    # ---------------- Envelopes ----------------
+    SimpleSuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+        meta:
+          type: object
+          properties:
+            message:
+              type: string
+
+    ApiErrorDetail:
+      type: object
+      properties:
+        field:
+          type: string
+        message:
+          type: string
+        code:
+          type: string
+
+    ApiErrorObject:
+      type: object
+      properties:
+        code:
+          type: string
+          example: VALIDATION_ERROR
+        message:
+          type: string
+          example: Invalid input parameters
+        statusCode:
+          type: integer
+          example: 400
+        timestamp:
+          type: string
+          format: date-time
+        requestId:
+          type: string
+          format: uuid
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiErrorDetail'
+
+    ApiErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          $ref: '#/components/schemas/ApiErrorObject'
+
+    PaginationMeta:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 42
+        totalPages:
+          type: integer
+          example: 3
+        hasNextPage:
+          type: boolean
+          example: true
+        hasPreviousPage:
+          type: boolean
+          example: false
+
+    # ---------------- Enums ----------------
+    UserRole:
+      type: string
+      enum: [RENTER, LEASER, ADMIN]
+
+    AssetStatus:
+      type: string
+      enum: [DRAFT, PENDING_REVIEW, AVAILABLE, RENTED, MAINTENANCE, REJECTED]
+
+    AssetCondition:
+      type: string
+      enum: [EXCELLENT, GOOD, FAIR]
+
+    BookingStatus:
+      type: string
+      enum: [PENDING, APPROVED, ACTIVE, COMPLETED, CANCELLED, REJECTED]
+
+    NotificationType:
+      type: string
+      enum:
+        - BOOKING_REQUEST
+        - BOOKING_APPROVED
+        - BOOKING_REJECTED
+        - BOOKING_CANCELLED
+        - ASSET_APPROVED
+        - ASSET_REJECTED
+        - REVIEW_RECEIVED
+        - PAYMENT_RECEIVED
+        - SYSTEM
+
+    AuditAction:
+      type: string
+      enum:
+        - USER_CREATED
+        - USER_DISABLED
+        - USER_ROLE_CHANGED
+        - ASSET_CREATED
+        - ASSET_APPROVED
+        - ASSET_REJECTED
+        - BOOKING_APPROVED
+        - BOOKING_REJECTED
+
+    # ---------------- Domain Schemas ----------------
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        role:
+          $ref: '#/components/schemas/UserRole'
+        phone:
+          type: string
+          nullable: true
+        companyName:
+          type: string
+          nullable: true
+        avatar:
+          type: string
+          nullable: true
+        location:
+          type: string
+          nullable: true
+        verified:
+          type: boolean
+        rating:
+          type: number
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    RegisterInput:
+      type: object
+      required:
+        - name
+        - email
+        - password
+        - role
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+          maxLength: 100
+        role:
+          $ref: '#/components/schemas/UserRole'
+        phone:
+          type: string
+        companyName:
+          type: string
+        location:
+          type: string
+
+    LoginInput:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    AuthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            user:
+              $ref: '#/components/schemas/User'
+            accessToken:
+              type: string
+            refreshToken:
+              type: string
+
+    UserResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            user:
+              $ref: '#/components/schemas/User'
+
+    UpdateUserStatusInput:
+      type: object
+      properties:
+        isActive:
+          type: boolean
+        verified:
+          type: boolean
+
+    Category:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+          nullable: true
+        icon:
+          type: string
+        image:
+          type: string
+          nullable: true
+        sortOrder:
+          type: integer
+        isActive:
+          type: boolean
+        assetCount:
+          type: integer
+
+    CategoryListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+
+    CategoryDetailResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/Category'
+
+    AssetImage:
+      type: object
+      properties:
+        id:
+          type: string
+        url:
+          type: string
+        publicId:
+          type: string
+        sortOrder:
+          type: integer
+        isCover:
+          type: boolean
+
+    AssetSpecification:
+      type: object
+      required:
+        - brand
+        - model
+        - year
+      properties:
+        brand:
+          type: string
+        model:
+          type: string
+        year:
+          type: integer
+        operatingWeight:
+          type: string
+        enginePower:
+          type: string
+        fuelType:
+          type: string
+        operatingHours:
+          type: integer
+        capacity:
+          type: string
+        maxReach:
+          type: string
+        boomLength:
+          type: string
+
+    Asset:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        name:
+          type: string
+        tagline:
+          type: string
+          nullable: true
+        description:
+          type: string
+        category:
+          type: string
+        categorySlug:
+          type: string
+        categoryId:
+          type: string
+        coverImage:
+          type: string
+          nullable: true
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssetImage'
+        pricePerDay:
+          type: number
+        pricePerWeek:
+          type: number
+          nullable: true
+        securityDeposit:
+          type: number
+        location:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        pinCode:
+          type: string
+          nullable: true
+        rating:
+          type: number
+        reviewCount:
+          type: integer
+        available:
+          type: boolean
+        status:
+          $ref: '#/components/schemas/AssetStatus'
+        condition:
+          $ref: '#/components/schemas/AssetCondition'
+        specifications:
+          $ref: '#/components/schemas/AssetSpecification'
+        owner:
+          $ref: '#/components/schemas/User'
+
+    CreateAssetInput:
+      type: object
+      required:
+        - title
+        - description
+        - categoryId
+        - pricePerDay
+        - securityDeposit
+        - location
+        - city
+        - state
+        - specification
+      properties:
+        title:
+          type: string
+          minLength: 3
+          maxLength: 150
+        tagline:
+          type: string
+          maxLength: 200
+        description:
+          type: string
+          minLength: 10
+        categoryId:
+          type: string
+        condition:
+          $ref: '#/components/schemas/AssetCondition'
+        pricePerDay:
+          type: number
+          minimum: 1
+        pricePerWeek:
+          type: number
+        securityDeposit:
+          type: number
+          minimum: 0
+        location:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        pinCode:
+          type: string
+        specification:
+          $ref: '#/components/schemas/AssetSpecification'
+
+    UpdateAssetInput:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        pricePerDay:
+          type: number
+        pricePerWeek:
+          type: number
+        securityDeposit:
+          type: number
+        location:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+
+    AssetDetailResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/Asset'
+
+    PaginatedAssetsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Asset'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    AvailabilityResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            assetId:
+              type: string
+            available:
+              type: boolean
+            nextAvailableDate:
+              type: string
+              format: date
+            bookedDateRanges:
+              type: array
+              items:
+                type: object
+                properties:
+                  startDate:
+                    type: string
+                    format: date
+                  endDate:
+                    type: string
+                    format: date
+
+    FavoriteStatusResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            isFavorite:
+              type: boolean
+
+    CalculateBookingInput:
+      type: object
+      required:
+        - assetId
+        - startDate
+        - endDate
+      properties:
+        assetId:
+          type: string
+          format: uuid
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+        operatorRequired:
+          type: boolean
+          default: false
+        deliveryRequired:
+          type: boolean
+          default: false
+
+    BookingCostResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            durationDays:
+              type: integer
+            dailyRate:
+              type: number
+            rentalSubtotal:
+              type: number
+            operatorFee:
+              type: number
+            deliveryFee:
+              type: number
+            securityDeposit:
+              type: number
+            estimatedTotal:
+              type: number
+
+    CreateBookingInput:
+      type: object
+      required:
+        - assetId
+        - startDate
+        - endDate
+        - projectLocation
+      properties:
+        assetId:
+          type: string
+          format: uuid
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+        projectLocation:
+          type: string
+        projectDescription:
+          type: string
+        operatorRequired:
+          type: boolean
+          default: false
+        deliveryRequired:
+          type: boolean
+          default: false
+
+    Booking:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+        durationDays:
+          type: integer
+        dailyRate:
+          type: number
+        rentalSubtotal:
+          type: number
+        operatorFee:
+          type: number
+        deliveryFee:
+          type: number
+        securityDeposit:
+          type: number
+        estimatedTotal:
+          type: number
+        projectLocation:
+          type: string
+        status:
+          $ref: '#/components/schemas/BookingStatus'
+        asset:
+          $ref: '#/components/schemas/Asset'
+        renter:
+          $ref: '#/components/schemas/User'
+
+    BookingDetailResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/Booking'
+
+    PaginatedBookingsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Booking'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    Review:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        author:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            companyName:
+              type: string
+              nullable: true
+
+    CreateReviewInput:
+      type: object
+      required:
+        - bookingId
+        - rating
+        - comment
+      properties:
+        bookingId:
+          type: string
+          format: uuid
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        comment:
+          type: string
+          minLength: 10
+          maxLength: 1000
+
+    ReviewDetailResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/Review'
+
+    PaginatedReviewsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Review'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/NotificationType'
+        title:
+          type: string
+        message:
+          type: string
+        read:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    PaginatedNotificationsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        actorId:
+          type: string
+          nullable: true
+        action:
+          $ref: '#/components/schemas/AuditAction'
+        entityType:
+          type: string
+        entityId:
+          type: string
+        metadata:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+        actor:
+          $ref: '#/components/schemas/User'
+
+    PaginatedAuditLogsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLog'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    PaginatedUsersResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    DashboardResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            users:
+              type: object
+              properties:
+                total:
+                  type: integer
+                renters:
+                  type: integer
+                leasers:
+                  type: integer
+                admins:
+                  type: integer
+                active:
+                  type: integer
+            assets:
+              type: object
+              properties:
+                total:
+                  type: integer
+                available:
+                  type: integer
+                pendingReview:
+                  type: integer
+                rented:
+                  type: integer
+            bookings:
+              type: object
+              properties:
+                total:
+                  type: integer
+                active:
+                  type: integer
+                completed:
+                  type: integer
+            financials:
+              type: object
+              properties:
+                totalRevenue:
+                  type: number
+                activeEscrow:
+                  type: number
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        timestamp:
+          type: string
+          format: date-time
+        uptime:
+          type: number
+          example: 120.45
+        environment:
+          type: string
+          example: development
+        database:
+          type: object
+          properties:
+            status:
+              type: string
+              example: connected
+            latencyMs:
+              type: number
+              example: 4.2
