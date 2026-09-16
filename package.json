@@ -20,13 +20,19 @@
     "db:status": "prisma migrate status",
     "db:studio": "prisma studio",
     "db:seed": "prisma db seed",
-    "docker:db:up": "docker compose up -d",
-    "docker:db:down": "docker compose down",
+    "docker:db:up": "docker compose up -d postgres",
+    "docker:db:down": "docker compose stop postgres",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand",
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
     "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage --runInBand",
     "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js tests/unit",
-    "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js tests/integration --runInBand"
+    "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js tests/integration --runInBand",
+    "docker:build": "docker build -t rentsphere-api .",
+    "docker:up": "docker compose up --build -d",
+    "docker:down": "docker compose down",
+    "config:validate:prod": "tsx src/config/validate-production.ts",
+    "render-build": "npm install && npx prisma generate && npm run build",
+    "db:neon:test": "tsx src/database/validate-neon.ts"
   },
   "keywords": [
     "rentsphere",
@@ -57,7 +63,8 @@
     "pino-http": "^10.4.0",
     "swagger-ui-express": "^5.0.1",
     "yaml": "^2.9.1",
-    "zod": "^3.24.2"
+    "zod": "^3.24.2",
+    "pino-pretty": "^13.0.0"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -72,7 +79,6 @@
     "@types/swagger-ui-express": "^4.1.8",
     "eslint": "^9.20.1",
     "jest": "^30.5.1",
-    "pino-pretty": "^13.0.0",
     "prettier": "^3.5.1",
     "prisma": "^6.19.3",
     "rimraf": "^6.0.1",
