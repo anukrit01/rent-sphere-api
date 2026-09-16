@@ -29,7 +29,8 @@
     "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js tests/integration --runInBand",
     "docker:build": "docker build -t rentsphere-api .",
     "docker:up": "docker compose up --build -d",
-    "docker:down": "docker compose down"
+    "docker:down": "docker compose down",
+    "config:validate:prod": "tsx src/config/validate-production.ts"
   },
   "keywords": [
     "rentsphere",

@@ -16,6 +16,11 @@ import { setupSwagger } from './docs/swagger.js';
 export const createApp = (): Express => {
   const app = express();
 
+  // Reverse proxy trust in production (Render, Vercel, Cloudflare, AWS ALB)
+  if (env.NODE_ENV === 'production') {
+    app.set('trust proxy', 1);
+  }
+
   // Security Headers (Configured with permissive style/script for Swagger UI and Cloudinary assets)
   app.use(
     helmet({
